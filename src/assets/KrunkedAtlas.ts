@@ -130,6 +130,23 @@ const C_GHOST_D = hexToRgba('#6ad4cc', 210);
 const C_RAT = hexToRgba('#9b95a3');
 const C_RAT_D = hexToRgba('#696373');
 const C_RAT_L = hexToRgba('#c7c0cf');
+// Wave 2 Floor 1-5 rich thematic colors
+const C_PLUM = hexToRgba('#69428a');
+const C_PLUM_D = hexToRgba('#3f2559');
+const C_PLUM_L = hexToRgba('#9e6ec7');
+const C_TERRA = hexToRgba('#c45835');
+const C_TERRA_D = hexToRgba('#853520');
+const C_TERRA_L = hexToRgba('#eb8854');
+const C_TEAL = hexToRgba('#2da8a4');
+const C_TEAL_D = hexToRgba('#1b6369');
+const C_TEAL_L = hexToRgba('#78e3de');
+const C_ICE = hexToRgba('#9ceeff');
+const C_ICE_D = hexToRgba('#4fa8cc');
+const C_SLUM = hexToRgba('#3c3959');
+const C_SLUM_D = hexToRgba('#232038');
+const C_SLUM_L = hexToRgba('#6a6494');
+const C_TAN = hexToRgba('#d6b47a');
+const C_TAN_D = hexToRgba('#997a49');
 
 class SpriteCanvas {
   readonly w: number;
@@ -171,6 +188,26 @@ class SpriteCanvas {
     this.data[o + 1] = 0;
     this.data[o + 2] = 0;
     this.data[o + 3] = 0;
+  }
+
+  clearEllipse(cx: number, cy: number, rx: number, ry: number): void {
+    if (rx <= 0 || ry <= 0) return;
+    const x0 = Math.max(0, Math.floor(cx - rx - 1));
+    const x1 = Math.min(this.w - 1, Math.ceil(cx + rx + 1));
+    const y0 = Math.max(0, Math.floor(cy - ry - 1));
+    const y1 = Math.min(this.h - 1, Math.ceil(cy + ry + 1));
+    const invRx2 = 1 / (rx * rx);
+    const invRy2 = 1 / (ry * ry);
+    for (let py = y0; py <= y1; py++) {
+      const dy = py - cy;
+      const dy2 = dy * dy * invRy2;
+      for (let px = x0; px <= x1; px++) {
+        const dx = px - cx;
+        if (dx * dx * invRx2 + dy2 <= 1.0) {
+          this.clearPx(px, py);
+        }
+      }
+    }
   }
 
   rect(x: number, y: number, w: number, h: number, c: RGBA): void {
@@ -1420,124 +1457,403 @@ function drawBoss(c: SpriteCanvas, id: string): void {
     c.ellipse(cx - 12, 83, 10, 6, EYE_W);
     c.ellipse(cx + 12, 83, 10, 6, EYE_W);
   } else if (id === 'boss_b_cheddar') {
-    // Western Cowboy Cheese Gunslinger!
-    c.ellipse(cx, cy + 10, 26, 22, C_CHEESE);
-    c.ellipse(cx + 5, cy + 14, 18, 15, C_CHEESE_D);
-    // Red cowboy bandana + gold sheriff star!
-    c.tri(cx - 20, cy + 12, cx + 20, cy + 12, cx, cy + 28, C_RED);
-    c.star(cx + 14, cy + 20, 6, 2.5, 5, C_GOLD);
-    // Big western cowboy Stetson hat!
-    c.ellipse(cx, cy - 14, 34, 8, C_BRN_D);
-    c.roundRect(cx - 18, cy - 34, 36, 22, 6, C_BRN);
-    c.rect(cx - 18, cy - 18, 36, 5, C_RED);
-    // Narrow squint western eyes
-    c.rect(cx - 14, cy - 4, 10, 4, EYE_W);
-    c.rect(cx + 4, cy - 4, 10, 4, EYE_W);
-    c.px(cx - 8, cy - 2, INK);
-    c.px(cx + 10, cy - 2, INK);
-    // Twin cowboy boots & six-shooter!
-    c.ellipse(cx - 14, 83, 10, 6, C_BRN_D);
-    c.ellipse(cx + 14, 83, 10, 6, C_BRN_D);
-    c.rect(cx + 20, cy + 6, 18, 6, C_STEEL);
-    c.rect(cx + 18, cy + 10, 6, 8, C_BRN);
-  } else if (id === 'boss_b_static') {
-    // Grand Showman Static Boss with dramatic cape & giant mallet!
-    c.poly([[cx - 26, cy - 8], [cx - 42, 78], [cx + 42, 78], [cx + 26, cy - 8]], S2);
-    c.poly([[cx - 14, 24], [cx - 28, 6], [cx - 4, 18]], S0);
-    c.poly([[cx + 14, 24], [cx + 28, 6], [cx + 4, 18]], S1);
-    c.ellipse(cx, cy - 6, 20, 18, S0);
-    c.ellipse(cx, cy - 4, 15, 12, S4);
-    c.roundRect(cx - 16, cy - 14, 32, 10, 3, S2);
-    c.circle(cx - 6, cy - 9, 4.5, EYE_W);
-    c.circle(cx + 6, cy - 9, 4.5, EYE_W);
-    c.circle(cx - 5, cy - 9, 2, INK);
-    c.circle(cx + 7, cy - 9, 2, INK);
-    c.ellipse(cx, cy + 4, 12, 6, EYE_W);
-    c.ellipse(cx, cy + 24, 18, 16, S0);
-    c.ellipse(cx - 12, 83, 9, 5, S3);
-    c.ellipse(cx + 12, 83, 9, 5, S3);
-    // Giant cartoon mallet
-    c.line(cx + 20, cy + 16, cx + 34, cy - 14, C_BRN, 4);
-    c.roundRect(cx + 22, cy - 28, 22, 14, 4, S3);
-  } else if (id === 'boss_b_doppel') {
-    // Uncanny melty lanky Doppel-Peppo!
-    c.ellipse(cx, 18, 14, 12, P0);
-    c.ellipse(cx + 6, 14, 12, 10, P1);
-    // Melty stretched torso & dripping sleeves
-    c.poly([[cx - 16, 36], [cx + 16, 36], [cx + 22, 74], [cx - 22, 74]], P2);
-    c.ellipse(cx, 32, 15, 14, P4);
-    // Dripping cheeks
-    c.ellipse(cx - 11, 44, 4, 9, P5);
-    c.ellipse(cx + 12, 46, 4, 10, P5);
-    // Uncanny mismatched wide eyes!
-    c.circle(cx - 6, 29, 6, EYE_W);
-    c.circle(cx + 7, 30, 4.5, EYE_W);
-    c.circle(cx - 7, 28, 2.2, C_RED);
-    c.circle(cx + 8, 31, 1.8, INK);
-    // Jagged huge uncanny grin!
-    c.poly([[cx - 13, 38], [cx + 14, 36], [cx + 10, 48], [cx - 10, 46]], INK);
-    for (let tx = cx - 9; tx <= cx + 9; tx += 4) {
-      c.rect(tx, 38, 2.5, 4, EYE_W);
+    // Sheriff Cheddar — Western Cowboy Cheese Gunslinger with Stetson, Bandolier & Six-Shooter!
+    // Melted cheddar desperado body with swiss cheese dimples & drips
+    c.ellipse(cx, cy + 12, 27, 23, C_CHEESE);
+    c.ellipse(cx + 5, cy + 16, 20, 16, C_CHEESE_D);
+    c.ellipse(cx - 6, cy + 8, 14, 12, C_YEL);
+    // Melty cheese puddles/craters along hem
+    c.circle(cx - 18, cy + 20, 4.5, C_CHEESE_D);
+    c.circle(cx + 17, cy + 10, 3.8, C_CHEESE_D);
+    c.circle(cx - 10, cy + 28, 3.5, C_CHEESE_D);
+    c.ellipse(cx - 22, cy + 28, 5, 8, C_CHEESE);
+    c.ellipse(cx + 21, cy + 27, 5, 7, C_CHEESE_D);
+
+    // Cross-chest leather bullet bandolier with gleaming brass cartridges!
+    c.line(cx - 21, cy + 3, cx + 19, cy + 27, C_BRN_D, 7);
+    c.line(cx - 21, cy + 3, cx + 19, cy + 27, C_BRN, 4);
+    for (let i = 0; i < 6; i++) {
+      const t = (i + 0.5) / 6;
+      const bx = cx - 18 + t * 34;
+      const by = cy + 5 + t * 20;
+      c.line(bx - 1, by - 3, bx + 2, by + 2, C_GOLD, 2.5);
+      c.px(bx - 1, by - 3, EYE_W);
     }
-    // Lanky clawed hands
-    c.line(cx - 16, 44, cx - 34, 62, P0, 5);
-    c.line(cx + 16, 44, cx + 34, 60, P0, 5);
-    c.circle(cx - 35, 64, 6, P4);
-    c.circle(cx + 35, 62, 6, P4);
-  } else if (id === 'boss_b_megacrust') {
-    // Theatrical Lord Dough supervillain!
-    c.poly([[cx - 24, 34], [cx - 38, 86], [cx + 38, 86], [cx + 24, 34]], C_PURP_D);
-    c.poly([[cx - 16, 38], [cx + 16, 38], [cx + 10, 82], [cx - 10, 82]], C_RED);
-    // Giant manic pizza-wedge villain head!
-    c.tri(cx - 24, 38, cx + 24, 38, cx, 6, C_CHEESE);
-    c.rect(cx - 24, 34, 48, 7, C_BRN_L);
-    c.circle(cx - 8, 26, 4.5, EYE_W);
-    c.circle(cx + 8, 26, 4.5, EYE_W);
-    c.circle(cx - 7, 26, 2, C_RED);
-    c.circle(cx + 9, 26, 2, C_RED);
-    c.ellipse(cx, 35, 13, 5, EYE_W);
-    // Dramatic bowtie & white gloves
-    c.star(cx, 44, 7, 3, 4, C_GOLD);
-    c.circle(cx - 28, 56, 8, EYE_W);
-    c.circle(cx + 28, 56, 8, EYE_W);
-  } else {
-    // mega_crust_chaser: GIANT menacing floating pepperoni pizza moon with mustache!
-    c.circle(cx, cy, 40, C_BRN_L); // crispy crust rim
-    c.circle(cx, cy, 34, C_RED); // marinara ring
-    c.circle(cx, cy, 31, C_CHEESE); // melted cheese face
-    // Pepperoni cheeks & brow spots
-    c.circle(cx - 20, cy + 8, 6.5, C_RED_D);
-    c.circle(cx + 20, cy + 8, 6.5, C_RED_D);
-    c.circle(cx - 16, cy - 18, 5, C_RED);
-    c.circle(cx + 16, cy - 18, 5, C_RED);
-    // Glowing sinister cartoon eyes & furrowed angry brows
-    c.ellipse(cx - 11, cy - 6, 8, 9, EYE_W);
-    c.ellipse(cx + 11, cy - 6, 8, 9, EYE_W);
-    c.circle(cx - 9, cy - 5, 4, C_RED);
-    c.circle(cx + 9, cy - 5, 4, C_RED);
-    c.circle(cx - 9, cy - 5, 2, INK);
-    c.circle(cx + 9, cy - 5, 2, INK);
-    c.line(cx - 22, cy - 16, cx - 2, cy - 10, INK, 4);
-    c.line(cx + 22, cy - 16, cx + 2, cy - 10, INK, 4);
-    // Giant curling cartoon nose & dark mustache
-    c.ellipse(cx, cy + 3, 7, 5, C_ORG);
+
+    // Crimson cowboy bandana + gleaming 5-point Sheriff Star badge!
     c.poly(
       [
-        [cx - 24, cy + 12],
-        [cx - 8, cy + 7],
-        [cx + 8, cy + 7],
-        [cx + 24, cy + 12],
-        [cx + 18, cy + 18],
-        [cx, cy + 13],
-        [cx - 18, cy + 18],
+        [cx - 21, cy + 9],
+        [cx + 21, cy + 9],
+        [cx + 11, cy + 23],
+        [cx, cy + 29],
+        [cx - 11, cy + 23],
+      ],
+      C_RED
+    );
+    c.line(cx - 14, cy + 13, cx + 14, cy + 13, C_RED_L, 1.5);
+    c.line(cx - 7, cy + 19, cx + 7, cy + 19, C_RED_D, 1.5);
+    c.star(cx - 13, cy + 17, 6.5, 2.8, 5, C_GOLD);
+    c.circle(cx - 13, cy + 17, 2, EYE_W);
+
+    // Gritty western squinted eyes + bushy outlaw brows + cocky smirk with toothpick!
+    c.rect(cx - 15, cy - 5, 11, 5, EYE_W);
+    c.rect(cx + 4, cy - 5, 11, 5, EYE_W);
+    c.circle(cx - 8, cy - 3, 2, INK);
+    c.circle(cx + 11, cy - 3, 2, INK);
+    c.line(cx - 17, cy - 7, cx - 3, cy - 5, C_BRN_D, 2.6);
+    c.line(cx + 17, cy - 7, cx + 3, cy - 5, C_BRN_D, 2.6);
+    // Smirk + toothpick
+    c.arc(cx + 1, cy + 4, 8, 3.5, 0.1, Math.PI - 0.1, INK, 1.8);
+    c.line(cx + 6, cy + 5, cx + 18, cy + 8, C_CREAM, 1.6);
+
+    // Iconic wide-brimmed creased Western Stetson Hat!
+    c.ellipse(cx, cy - 13, 37, 9, C_BRN_D);
+    c.ellipse(cx, cy - 15, 35, 7, C_BRN);
+    // Creased pinch crown
+    c.poly(
+      [
+        [cx - 20, cy - 15],
+        [cx - 15, cy - 36],
+        [cx - 4, cy - 32],
+        [cx, cy - 35],
+        [cx + 4, cy - 32],
+        [cx + 15, cy - 36],
+        [cx + 20, cy - 15],
+      ],
+      C_BRN
+    );
+    c.poly(
+      [
+        [cx - 15, cy - 35],
+        [cx - 4, cy - 31],
+        [cx - 6, cy - 16],
+        [cx - 18, cy - 16],
+      ],
+      C_BRN_L
+    );
+    // Red hatband + gold buckle
+    c.rect(cx - 19, cy - 19, 38, 5, C_RED);
+    c.roundRect(cx - 5, cy - 20, 10, 7, 1.5, C_GOLD);
+    c.rect(cx - 2, cy - 18, 4, 3, C_BRN_D);
+
+    // Spurred leather cowboy boots!
+    c.roundRect(cx - 21, 74, 15, 12, 3, C_BRN_D);
+    c.ellipse(cx - 11, 84, 9, 4.5, C_BRN);
+    c.star(cx - 23, 82, 4, 1.8, 5, C_GOLD);
+    c.roundRect(cx + 6, 74, 15, 12, 3, C_BRN_D);
+    c.ellipse(cx + 16, 84, 9, 4.5, C_BRN);
+    c.star(cx + 23, 82, 4, 1.8, 5, C_GOLD);
+
+    // Detailed heavy Six-Shooter Revolver held forward!
+    c.roundRect(cx + 15, cy + 9, 7, 11, 2, C_BRN_D); // grip
+    c.roundRect(cx + 19, cy + 4, 24, 7, 2, C_STEEL_D); // long barrel
+    c.rect(cx + 20, cy + 5, 22, 3, C_STEEL_L); // chrome sheen
+    c.circle(cx + 24, cy + 9, 5, C_GOLD); // brass cylinder
+    c.circle(cx + 24, cy + 9, 2, C_GOLD_D);
+    c.rect(cx + 40, cy + 2, 3, 4, C_STEEL_L); // front sight
+    // Gloved trigger hand
+    c.circle(cx + 16, cy + 12, 5.5, C_CHEESE);
+  } else if (id === 'boss_b_static') {
+    // The Static — Chaotic Yellow Gremlin Showman on Coiled Spring Pogo + Neon Skateboard!
+    // Electric static sparks radiating behind
+    c.star(cx - 32, cy - 18, 8, 3, 4, C_CYAN);
+    c.star(cx + 33, cy - 10, 7, 2.5, 4, C_YEL);
+    // Dramatic billowing orange showman cape
+    c.poly(
+      [
+        [cx - 22, cy - 12],
+        [cx - 43, 62],
+        [cx - 28, 54],
+        [cx - 16, 66],
+        [cx + 18, 66],
+        [cx + 30, 54],
+        [cx + 42, 62],
+        [cx + 22, cy - 12],
+      ],
+      S2
+    );
+    // Neon hover-skateboard mounted at base!
+    c.roundRect(cx - 28, 76, 56, 7, 3, C_CYAN);
+    c.rect(cx - 22, 78, 44, 3, S3);
+    c.circle(cx - 18, 85, 5, S2);
+    c.circle(cx + 18, 85, 5, S2);
+    c.circle(cx - 18, 85, 2, EYE_W);
+    c.circle(cx + 18, 85, 2, EYE_W);
+    // Coiled bouncy steel spring pogo shaft between skateboard & Static!
+    c.line(cx, 54, cx, 78, C_STEEL_D, 4);
+    for (let sy = 57; sy <= 74; sy += 4) {
+      c.line(cx - 8, sy, cx + 8, sy + 2, C_STEEL_L, 2.5);
+    }
+    c.rect(cx - 13, 60, 26, 3.5, C_GOLD); // Pogo footpegs!
+    // Static's yellow jumpsuit body perched chaotically on pogo!
+    c.ellipse(cx, cy + 8, 17, 14, S0);
+    c.ellipse(cx + 3, cy + 11, 12, 10, S1);
+    c.rect(cx - 14, cy + 12, 28, 4, S3);
+    c.ellipse(cx - 10, 60, 6.5, 4, S2);
+    c.ellipse(cx + 10, 60, 6.5, 4, S2);
+    // Wild floppy jester-rabbit hood ears!
+    c.poly([[cx - 13, 24], [cx - 32, 5], [cx - 4, 17]], S0);
+    c.poly([[cx - 12, 21], [cx - 24, 10], [cx - 8, 18]], S1);
+    c.poly([[cx + 12, 24], [cx + 31, 6], [cx + 4, 17]], S1);
+    // Oversized chaotic yellow hooded head
+    c.ellipse(cx, cy - 14, 19, 16, S0);
+    c.ellipse(cx + 1, cy - 11, 14, 11, S4);
+    // Orange domino bandit mask
+    c.roundRect(cx - 15, cy - 21, 30, 9, 3, S2);
+    // Manic wild eyes (one wider than the other!)
+    c.circle(cx - 6, cy - 17, 5, EYE_W);
+    c.circle(cx + 7, cy - 17, 4.2, EYE_W);
+    c.circle(cx - 5, cy - 17, 2.2, INK);
+    c.circle(cx + 8, cy - 17, 1.8, C_RED);
+    // Long mischievous pointed nose
+    c.tri(cx + 2, cy - 14, cx + 16, cy - 12, cx + 2, cy - 9, S5);
+    // Huge toothy unhinged grin + cheeky magenta tongue!
+    c.ellipse(cx, cy - 5, 13, 6, EYE_W);
+    c.line(cx - 12, cy - 5, cx + 12, cy - 5, INK, 1.4);
+    c.line(cx - 6, cy - 10, cx - 6, cy, INK, 1.2);
+    c.line(cx, cy - 10, cx, cy, INK, 1.2);
+    c.line(cx + 6, cy - 10, cx + 6, cy, INK, 1.2);
+    c.ellipse(cx + 6, cy + 1, 5, 3.5, S3);
+    // Gloved hands: left holding a lit cartoon bomb, right hoisting oversized magenta mallet!
+    c.circle(cx - 22, cy + 6, 6.5, EYE_W);
+    c.circle(cx - 28, cy - 4, 8, P2);
+    c.circle(cx - 31, cy - 7, 2.2, C_STEEL_L);
+    c.star(cx - 23, cy - 16, 5.5, 2.2, 5, C_YEL);
+    c.circle(cx + 22, cy + 4, 6.5, EYE_W);
+    c.line(cx + 22, cy + 4, cx + 33, cy - 20, C_BRN, 4);
+    c.roundRect(cx + 21, cy - 33, 24, 15, 4, S3);
+    c.rect(cx + 24, cy - 31, 18, 4, C_PINK);
+  } else if (id === 'boss_b_doppel') {
+    // Doppel-Peppo — Uncanny Tall Melty Crooked-Toque Mirror Twin!
+    // Crooked collapsing melting chef toque leaning heavily to one side
+    c.poly(
+      [
+        [cx - 16, 20],
+        [cx - 8, 4],
+        [cx + 12, 3],
+        [cx + 26, 13],
+        [cx + 19, 24],
+        [cx - 14, 24],
+      ],
+      P0
+    );
+    c.ellipse(cx + 17, 17, 9, 7, P1);
+    c.ellipse(cx + 24, 24, 4, 9, P1); // melting toque drip!
+    c.line(cx - 6, 20, cx - 2, 7, INK, 1.4);
+    c.line(cx + 6, 20, cx + 13, 8, INK, 1.4);
+    c.rect(cx - 15, 19, 30, 5, P1);
+
+    // Tall lanky hunched rubber-hose torso with melting tank & apron drips!
+    c.poly([[cx - 14, 38], [cx + 14, 38], [cx + 19, 76], [cx - 19, 76]], P0);
+    c.poly([[cx - 11, 41], [cx + 11, 41], [cx + 16, 75], [cx - 16, 75]], P2);
+    // Dripping black apron ooze tendrils!
+    c.ellipse(cx - 13, 79, 4, 7, P2);
+    c.ellipse(cx + 14, 78, 4, 8, P2);
+    c.ellipse(cx, 80, 3.5, 6, P2);
+    // Crooked red accent belt
+    c.line(cx - 15, 68, cx + 16, 72, P3, 3);
+    // Tall spindly knees & oversized uneven shoes
+    c.line(cx - 8, 74, cx - 12, 84, P2, 5);
+    c.line(cx + 8, 74, cx + 11, 84, P2, 5);
+    c.ellipse(cx - 13, 85, 8, 4, P2);
+    c.ellipse(cx + 13, 85, 8, 4, P2);
+
+    // Overly long lanky melting arms hanging low with creepy spindly fingers!
+    c.line(cx - 14, 43, cx - 32, 62, P0, 6);
+    c.line(cx - 32, 62, cx - 35, 75, P4, 5);
+    c.line(cx + 14, 43, cx + 33, 60, P0, 6);
+    c.line(cx + 33, 60, cx + 36, 73, P4, 5);
+    // Melting sleeve drips & long clawed fingers
+    c.ellipse(cx - 26, 61, 3, 7, P1);
+    c.ellipse(cx + 27, 59, 3, 7, P1);
+    c.circle(cx - 35, 76, 6.5, P4);
+    c.circle(cx + 36, 74, 6.5, P4);
+    c.line(cx - 39, 79, cx - 42, 86, P5, 2);
+    c.line(cx - 35, 80, cx - 35, 87, P5, 2);
+    c.line(cx + 39, 77, cx + 42, 84, P5, 2);
+    c.line(cx + 35, 78, cx + 35, 85, P5, 2);
+
+    // Uncanny stretched melting head!
+    c.ellipse(cx, 33, 15, 14, P4);
+    c.ellipse(cx - 12, 46, 4.5, 11, P5); // melty drooping cheek left
+    c.ellipse(cx + 13, 48, 4.5, 12, P5); // melty drooping cheek right
+    c.ellipse(cx - 3, 47, 4, 8, P4);
+    // Mismatched unhinged bulging eyes!
+    c.ellipse(cx - 7, 29, 7, 7.5, EYE_W);
+    c.ellipse(cx + 8, 32, 5, 4.5, EYE_W);
+    c.circle(cx - 8, 28, 3, C_RED);
+    c.circle(cx - 8, 28, 1.5, INK);
+    c.circle(cx + 9, 33, 2, INK);
+    c.arc(cx - 7, 36, 5, 2, 0.2, Math.PI - 0.2, INK, 1.4);
+    // Crooked oversized melting nose
+    c.ellipse(cx + 2, 35, 6, 4, P5);
+    c.ellipse(cx + 1, 34, 4, 3, P4);
+    // Jagged crooked asymmetrical mustache
+    c.poly(
+      [
+        [cx - 17, 41],
+        [cx - 4, 37],
+        [cx + 6, 38],
+        [cx + 18, 35],
+        [cx + 15, 43],
+        [cx + 3, 41],
+        [cx - 9, 44],
       ],
       INK
     );
-    // Chomping toothy grin
-    c.ellipse(cx, cy + 21, 16, 8, INK);
-    for (let tx = cx - 12; tx <= cx + 10; tx += 5) {
-      c.rect(tx, cy + 15, 3.5, 5, EYE_W);
-      c.rect(tx + 1, cy + 23, 3.5, 4, EYE_W);
+    // Wide unhinged uncanny toothed grin!
+    c.poly([[cx - 14, 42], [cx + 15, 40], [cx + 11, 54], [cx - 11, 52]], INK);
+    for (let tx = cx - 10; tx <= cx + 10; tx += 4) {
+      c.rect(tx, 42, 2.5, 5, EYE_W);
+      c.rect(tx + 1, 49, 2.2, 4, EYE_W);
+    }
+  } else if (id === 'boss_b_megacrust') {
+    // Lord Dough — Lanky Maniacal Supervillain in Checkered Shorts, Royal Crown & Unhinged Grin!
+    // Dramatic jagged dark-purple cape flaring behind shoulders
+    c.poly([[cx - 18, 34], [cx - 38, 68], [cx - 24, 62], [cx + 24, 62], [cx + 38, 68], [cx + 18, 34]], C_PURP_D);
+
+    // Lanky gangly legs with cartoon striped socks & oversized pointy villain shoes!
+    c.line(cx - 9, 64, cx - 12, 82, P4, 5);
+    c.line(cx + 9, 64, cx + 12, 82, P4, 5);
+    c.rect(cx - 14, 73, 5, 8, EYE_W);
+    c.rect(cx - 14, 76, 5, 2, C_RED);
+    c.rect(cx + 9, 73, 5, 8, EYE_W);
+    c.rect(cx + 9, 76, 5, 2, C_RED);
+    c.poly([[cx - 23, 86], [cx - 6, 86], [cx - 9, 80], [cx - 20, 82]], C_PURP);
+    c.poly([[cx + 6, 86], [cx + 23, 86], [cx + 20, 82], [cx + 9, 80]], C_PURP);
+
+    // Iconic Red-and-White Checkered Shorts!
+    c.roundRect(cx - 17, 54, 34, 15, 3, EYE_W);
+    for (let sy = 55; sy < 68; sy += 5) {
+      for (let sx = cx - 16; sx < cx + 16; sx += 5) {
+        if (((Math.floor((sx - (cx - 16)) / 5) + Math.floor((sy - 55) / 5)) & 1) === 0) {
+          c.rect(sx, sy, 5, 5, C_RED);
+        }
+      }
+    }
+    c.rect(cx - 17, 53, 34, 3, C_GOLD); // Gold waistband!
+
+    // Lanky slender crimson showman vest & crisp white shirt collar
+    c.poly([[cx - 14, 35], [cx + 14, 35], [cx + 12, 54], [cx - 12, 54]], C_RED);
+    c.tri(cx - 8, 35, cx + 8, 35, cx, 46, EYE_W);
+    c.star(cx, 41, 7, 3, 4, C_GOLD); // Dramatic golden bowtie!
+    c.circle(cx, 48, 2, C_GOLD);
+    c.circle(cx, 52, 2, C_GOLD);
+
+    // Exaggerated lanky rubber-hose arms + theatrical white showman gloves!
+    c.line(cx - 14, 39, cx - 31, 49, C_RED_D, 5);
+    c.line(cx + 14, 39, cx + 31, 47, C_RED_D, 5);
+    c.circle(cx - 33, 51, 8, EYE_W);
+    c.circle(cx + 33, 49, 8, EYE_W);
+    c.line(cx - 36, 49, cx - 32, 53, INK, 1.3);
+    c.line(cx + 32, 47, cx + 36, 51, INK, 1.3);
+
+    // Maniacal tall wedge-crust Lord Dough head + gleeful huge grin + royal golden crown!
+    c.tri(cx - 22, 37, cx + 22, 37, cx, 11, C_CHEESE);
+    c.roundRect(cx - 23, 32, 46, 8, 3, C_BRN_L); // crispy crust chin-rim
+    c.circle(cx - 9, 28, 3, C_RED); // pepperoni dimple
+    c.circle(cx + 10, 29, 2.5, C_RED);
+    // Gleaming Royal Golden Crown perched atop his head!
+    c.poly(
+      [
+        [cx - 13, 15],
+        [cx - 16, 4],
+        [cx - 6, 10],
+        [cx, 2],
+        [cx + 6, 10],
+        [cx + 16, 4],
+        [cx + 13, 15],
+      ],
+      C_GOLD
+    );
+    c.circle(cx, 11, 2.2, C_RED);
+    c.circle(cx - 8, 12, 1.8, C_CYAN);
+    c.circle(cx + 8, 12, 1.8, C_CYAN);
+
+    // Wild maniacal cartoon eyes & arched brows
+    c.ellipse(cx - 8, 23, 5.5, 6, EYE_W);
+    c.ellipse(cx + 8, 23, 5.5, 6, EYE_W);
+    c.circle(cx - 7, 23, 2.6, C_RED);
+    c.circle(cx + 9, 23, 2.6, C_RED);
+    c.px(cx - 7, 23, INK);
+    c.px(cx + 9, 23, INK);
+    c.line(cx - 14, 16, cx - 3, 19, INK, 2);
+    c.line(cx + 14, 16, cx + 3, 19, INK, 2);
+    // Massive manic rubber-hose grin packed with shiny teeth!
+    c.ellipse(cx, 33, 15, 6.5, INK);
+    c.ellipse(cx, 32, 13, 4.5, EYE_W);
+    c.line(cx - 12, 32, cx + 12, 32, INK, 1.4);
+    for (let tx = cx - 9; tx <= cx + 9; tx += 4.5) {
+      c.line(tx, 28, tx, 36, INK, 1.1);
+    }
+  } else {
+    // mega_crust_chaser: ULTRA-EXPRESSIVE Giant Grinning Pepperoni Moon Face!
+    // Melty dripping cheese tendrils hanging off bottom rim
+    c.ellipse(cx - 18, cy + 37, 4.5, 8, C_CHEESE);
+    c.ellipse(cx + 16, cy + 38, 4, 7, C_CHEESE_D);
+    c.ellipse(cx + 2, cy + 40, 5, 6, C_CHEESE);
+    // Blistered oven-baked crispy crust rim
+    c.circle(cx, cy, 41, C_BRN);
+    c.circle(cx, cy, 39, C_BRN_L);
+    // Toasted oven crust bubbles around outer rim
+    for (let a = 0; a < 10; a++) {
+      const ang = (a * Math.PI * 2) / 10 + 0.2;
+      c.circle(cx + Math.cos(ang) * 37, cy + Math.sin(ang) * 37, 3.2, C_BRN_D);
+      c.circle(cx + Math.cos(ang) * 36 - 1, cy + Math.sin(ang) * 36 - 1, 1.5, C_GOLD);
+    }
+    c.circle(cx, cy, 34, C_RED); // glossy deep marinara sauce ring
+    c.circle(cx, cy, 31, C_CHEESE); // rich melted cheddar face
+    c.ellipse(cx - 6, cy - 8, 22, 16, C_YEL); // glossy cheese highlight
+    // Juicy pepperoni cheeks & brow spots with glistening highlights
+    c.circle(cx - 21, cy + 6, 7, C_RED_D);
+    c.circle(cx - 22, cy + 5, 5, C_RED);
+    c.px(cx - 24, cy + 3, C_RED_L);
+    c.circle(cx + 21, cy + 6, 7, C_RED_D);
+    c.circle(cx + 20, cy + 5, 5, C_RED);
+    c.px(cx + 18, cy + 3, C_RED_L);
+    c.circle(cx - 17, cy - 20, 5.2, C_RED);
+    c.circle(cx + 17, cy - 20, 5.2, C_RED);
+    c.circle(cx, cy - 25, 4.5, C_GRN); // green pepper olive crest!
+
+    // Huge bloodshot maniacal glowing eyes & dramatic thick cartoon brows
+    c.ellipse(cx - 12, cy - 7, 9, 10.5, EYE_W);
+    c.ellipse(cx + 12, cy - 7, 9, 10.5, EYE_W);
+    // Crimson manic iris + spiral glint
+    c.circle(cx - 10, cy - 6, 4.8, C_RED);
+    c.circle(cx + 10, cy - 6, 4.8, C_RED);
+    c.circle(cx - 10, cy - 6, 2.3, INK);
+    c.circle(cx + 10, cy - 6, 2.3, INK);
+    c.circle(cx - 12, cy - 9, 1.8, EYE_W);
+    c.circle(cx + 8, cy - 9, 1.8, EYE_W);
+    c.line(cx - 23, cy - 17, cx - 2, cy - 11, INK, 4.2);
+    c.line(cx + 23, cy - 17, cx + 2, cy - 11, INK, 4.2);
+
+    // Big mischievous cartoon mushroom/olive nose + sweeping dark mustache!
+    c.ellipse(cx, cy + 3, 8, 5.5, C_ORG);
+    c.ellipse(cx - 2, cy + 1.5, 4.5, 2.8, C_GOLD);
+    c.poly(
+      [
+        [cx - 28, cy + 10],
+        [cx - 10, cy + 6],
+        [cx + 10, cy + 6],
+        [cx + 28, cy + 10],
+        [cx + 23, cy + 17],
+        [cx + 10, cy + 13],
+        [cx, cy + 15],
+        [cx - 10, cy + 13],
+        [cx - 23, cy + 17],
+      ],
+      INK
+    );
+
+    // Ultra-expressive wide chomping maniacal toothy grin + crimson tongue!
+    c.ellipse(cx, cy + 21, 19, 10, INK);
+    c.ellipse(cx, cy + 25, 11, 5, C_RED);
+    c.ellipse(cx, cy + 26, 7, 3, C_PINK);
+    for (let tx = cx - 15; tx <= cx + 13; tx += 5) {
+      c.rect(tx, cy + 13, 4, 6, EYE_W);
+      c.rect(tx + 0.5, cy + 25, 3.5, 4.5, EYE_W);
     }
   }
   c.inkOutline(INK, 2);
@@ -1646,14 +1962,45 @@ function drawTile(c: SpriteCanvas, kind: string): void {
       c.rect(0, 0, s, s, C_STONE);
       c.rect(0, 0, s, 4, C_STONE_L);
       c.rect(0, s - 4, s, 4, C_STONE_D);
+      c.rect(2, 5, 12, 9, C_STONE_L);
+      c.rect(18, 18, 12, 9, C_STONE_D);
       c.line(0, 16, s, 16, INK, 1.5);
       c.line(16, 0, 16, 16, INK, 1.5);
       c.line(8, 16, 8, s, INK, 1.5);
       c.line(24, 16, 24, s, INK, 1.5);
+      c.line(4, 21, 7, 25, INK, 1); // subtle stone crack
+      break;
+    case 'tile_solid_lobby_brick':
+      // Floor 1 Lobby — Royal purple castle brickwork with lavender mortar bevels
+      c.rect(0, 0, s, s, C_PLUM);
+      c.rect(0, 0, s, 4, C_PLUM_L);
+      c.rect(0, s - 3, s, 3, C_PLUM_D);
+      c.rect(2, 12, 11, 7, C_PLUM_D);
+      c.rect(18, 2, 12, 7, C_PLUM_L);
+      c.line(0, 10, s, 10, INK, 1.5);
+      c.line(0, 21, s, 21, INK, 1.5);
+      c.line(15, 0, 15, 10, INK, 1.5);
+      c.line(7, 10, 7, 21, INK, 1.5);
+      c.line(23, 10, 23, 21, INK, 1.5);
+      c.line(14, 21, 14, s, INK, 1.5);
+      c.px(4, 3, C_GOLD); // gilded mortar glint
+      break;
+    case 'tile_solid_catacomb':
+      // Floor 1 Catacombs — Scorched obsidian & ember-veined brick
+      c.rect(0, 0, s, s, hexToRgba('#54232c'));
+      c.rect(0, 0, s, 4, hexToRgba('#8f3940'));
+      c.rect(0, s - 4, s, 4, hexToRgba('#2e1118'));
+      c.line(0, 11, s, 11, INK, 1.6);
+      c.line(0, 22, s, 22, INK, 1.6);
+      c.line(12, 0, 12, 11, INK, 1.6);
+      c.line(22, 11, 22, 22, INK, 1.6);
+      c.line(9, 22, 9, s, INK, 1.6);
+      c.line(13, 13, 19, 19, C_ORG, 1.4); // glowing lava vein
       break;
     case 'tile_solid_brick':
       c.rect(0, 0, s, s, hexToRgba('#9e4b3a'));
       c.rect(0, 0, s, 4, hexToRgba('#cc6c56'));
+      c.rect(0, s - 3, s, 3, hexToRgba('#6e2e24'));
       c.line(0, 10, s, 10, INK, 1.5);
       c.line(0, 21, s, 21, INK, 1.5);
       c.line(14, 0, 14, 10, INK, 1.5);
@@ -1661,51 +2008,173 @@ function drawTile(c: SpriteCanvas, kind: string): void {
       c.line(22, 10, 22, 21, INK, 1.5);
       c.line(16, 21, 16, s, INK, 1.5);
       break;
+    case 'tile_solid_mesa':
+      // Floor 2 Western — Stratified red-rock terracotta canyon sandstone
+      c.rect(0, 0, s, s, C_TERRA);
+      c.rect(0, 0, s, 5, C_TERRA_L);
+      c.rect(0, 11, s, 6, C_TERRA_D);
+      c.rect(0, 23, s, 9, C_TERRA_D);
+      c.rect(0, 17, s, 4, C_TERRA_L);
+      c.line(0, 11, s, 11, INK, 1.2);
+      c.line(0, 23, s, 23, INK, 1.2);
+      c.line(10, 4, 14, 10, INK, 1.1);
+      c.line(22, 18, 26, 23, INK, 1.1);
+      break;
+    case 'tile_solid_graveyard':
+      // Floor 2 Graveyard — Moss-rimmed spooky midnight cobblestone
+      c.rect(0, 0, s, s, hexToRgba('#494c69'));
+      c.rect(0, 0, s, 5, hexToRgba('#6c7499'));
+      c.rect(2, 0, 9, 4, C_GRN_D);
+      c.rect(19, 0, 8, 3, C_GRN_D);
+      c.roundRect(2, 7, 13, 10, 3, hexToRgba('#5d6182'));
+      c.roundRect(17, 7, 13, 10, 3, hexToRgba('#3d3f59'));
+      c.roundRect(8, 19, 16, 11, 3, hexToRgba('#575b7a'));
+      c.line(0, 18, s, 18, INK, 1.4);
+      c.line(16, 6, 16, 18, INK, 1.4);
+      break;
     case 'tile_solid_wood':
       c.rect(0, 0, s, s, C_BRN);
       c.rect(0, 0, s, 4, C_BRN_L);
+      c.rect(0, s - 3, s, 3, C_BRN_D);
       for (let y = 8; y < s; y += 8) {
         c.line(0, y, s, y, C_BRN_D, 1.5);
       }
+      c.line(16, 0, 16, 8, C_BRN_D, 1.4);
+      c.line(8, 8, 8, 16, C_BRN_D, 1.4);
+      c.line(24, 16, 24, 24, C_BRN_D, 1.4);
       c.circle(5, 4, 1.5, INK);
       c.circle(27, 20, 1.5, INK);
+      break;
+    case 'tile_solid_resort':
+      // Floor 3 Resort — Sunlit turquoise & cream seaside boardwalk mosaic
+      c.rect(0, 0, s, s, C_TEAL);
+      c.rect(0, 0, s, 5, C_CREAM);
+      c.rect(0, 5, s, 2, C_GOLD);
+      c.rect(2, 9, 12, 10, C_TEAL_L);
+      c.rect(18, 20, 12, 10, C_TEAL_D);
+      c.line(0, 19, s, 19, INK, 1.3);
+      c.line(16, 7, 16, s, INK, 1.3);
+      break;
+    case 'tile_solid_orbit':
+      // Floor 3 Space — Starry cosmic hull alloy with cyan energy trim
+      c.rect(0, 0, s, s, hexToRgba('#252154'));
+      c.rect(0, 0, s, 3, C_CYAN);
+      c.rect(2, 5, s - 4, s - 8, hexToRgba('#342e73'));
+      c.line(0, 16, s, 16, INK, 1.4);
+      c.line(16, 3, 16, s, INK, 1.4);
+      c.circle(6, 9, 1.6, C_GOLD);
+      c.circle(26, 24, 1.6, C_CYAN);
+      c.px(23, 10, EYE_W);
+      c.px(9, 25, EYE_W);
+      break;
+    case 'tile_solid_golf':
+      // Floor 3 Golf — Manicured checkered fairway turf over rich earth
+      c.rect(0, 0, s, s, C_BRN);
+      c.rect(0, 10, s, s - 10, C_BRN_D);
+      c.circle(9, 20, 3, C_BRN);
+      c.circle(23, 25, 3.5, C_BRN);
+      c.rect(0, 0, 16, 9, C_GRN);
+      c.rect(16, 0, 16, 9, C_LIME);
+      c.rect(0, 8, s, 3, C_GRN_D);
+      c.line(0, 11, s, 11, INK, 1.4);
+      break;
+    case 'tile_solid_slum_brick':
+      // Floor 4 Neon Slum — Damp wet-brick subway masonry with neon specular rim
+      c.rect(0, 0, s, s, C_SLUM);
+      c.rect(0, 0, s, 4, C_SLUM_L);
+      c.rect(0, s - 3, s, 3, C_SLUM_D);
+      c.line(0, 10, s, 10, INK, 1.6);
+      c.line(0, 21, s, 21, INK, 1.6);
+      c.line(13, 0, 13, 10, INK, 1.6);
+      c.line(6, 10, 6, 21, INK, 1.6);
+      c.line(23, 10, 23, 21, INK, 1.6);
+      c.line(16, 21, 16, s, INK, 1.6);
+      // Wet glossy rain reflection streaks!
+      c.line(3, 3, 10, 3, C_CYAN, 1.2);
+      c.line(18, 14, 21, 18, C_MAG, 1.2);
+      break;
+    case 'tile_solid_sewer':
+      // Floor 4 Sewer — Grimy moss-teal drainage tile with industrial pipe rivets
+      c.rect(0, 0, s, s, hexToRgba('#2f4f46'));
+      c.rect(0, 0, s, 4, hexToRgba('#57856d'));
+      c.rect(0, s - 4, s, 4, hexToRgba('#1b302b'));
+      c.rect(3, 6, 11, 10, hexToRgba('#3c6658'));
+      c.rect(18, 17, 11, 10, hexToRgba('#254038'));
+      c.line(0, 16, s, 16, INK, 1.5);
+      c.line(16, 0, 16, s, INK, 1.5);
+      c.circle(25, 8, 2.2, C_LIME); // slime drip highlight
+      c.circle(7, 24, 1.8, C_STEEL);
       break;
     case 'tile_solid_metal':
       c.rect(0, 0, s, s, C_STEEL_D);
       c.rect(2, 2, s - 4, 4, C_STEEL_L);
       c.rect(3, 6, s - 6, s - 9, C_STEEL);
-      c.circle(6, 6, 1.5, INK);
-      c.circle(26, 6, 1.5, INK);
-      c.circle(6, 26, 1.5, INK);
-      c.circle(26, 26, 1.5, INK);
+      c.line(6, 24, 18, 12, C_STEEL_L, 1.5);
+      c.line(14, 24, 26, 12, C_STEEL_D, 1.5);
+      c.circle(6, 6, 1.8, INK);
+      c.circle(26, 6, 1.8, INK);
+      c.circle(6, 26, 1.8, INK);
+      c.circle(26, 26, 1.8, INK);
       break;
     case 'tile_solid_cheese':
       c.rect(0, 0, s, s, C_CHEESE);
       c.rect(0, 0, s, 4, C_YEL);
+      c.rect(0, s - 3, s, 3, C_CHEESE_D);
       c.circle(9, 13, 4, C_CHEESE_D);
       c.circle(23, 22, 5, C_CHEESE_D);
       c.circle(22, 8, 2.5, C_CHEESE_D);
+      c.circle(8, 12, 1.5, C_YEL);
       break;
     case 'tile_solid_neon':
-      c.rect(0, 0, s, s, hexToRgba('#251c45'));
+      c.rect(0, 0, s, s, hexToRgba('#20163d'));
       c.rect(0, 0, s, 3, C_MAG);
       c.rect(0, s - 3, s, 3, C_CYAN);
-      c.line(2, 2, s - 2, s - 2, hexToRgba('#49327a'), 1.5);
-      c.line(s - 2, 2, 2, s - 2, hexToRgba('#49327a'), 1.5);
+      c.rect(4, 6, s - 8, s - 12, hexToRgba('#2d1f59'));
+      c.line(4, 6, s - 4, s - 6, hexToRgba('#5e3ba6'), 1.5);
+      c.line(s - 4, 6, 4, s - 6, hexToRgba('#5e3ba6'), 1.5);
+      c.circle(16, 16, 3, C_CYAN);
       break;
     case 'tile_solid_snow':
-      c.rect(0, 0, s, s, hexToRgba('#809bbd'));
+      c.rect(0, 0, s, s, hexToRgba('#6d90ba'));
+      c.tri(2, 28, 12, 12, 20, 28, C_ICE_D);
+      c.tri(14, 28, 24, 14, 30, 28, C_ICE);
       c.rect(0, 0, s, 9, EYE_W);
       c.circle(6, 9, 4, EYE_W);
       c.circle(16, 10, 4.5, EYE_W);
       c.circle(26, 9, 4, EYE_W);
+      c.line(0, 12, s, 12, C_ICE, 1.2);
+      break;
+    case 'tile_solid_manor':
+      // Floor 5 Haunted Manor — Ornate dark-plum gothic wainscot & cobwebbed stone
+      c.rect(0, 0, s, s, hexToRgba('#382447'));
+      c.rect(0, 0, s, 4, hexToRgba('#6c4b85'));
+      c.rect(3, 7, s - 6, s - 10, hexToRgba('#2b1a38'));
+      c.rect(6, 10, s - 12, s - 16, hexToRgba('#4a325c'));
+      c.line(0, 4, s, 4, C_GOLD_D, 1.3);
+      c.line(0, s - 2, s, s - 2, INK, 1.5);
       break;
     case 'tile_solid_war':
-      c.rect(0, 0, s, s, hexToRgba('#4e593e'));
+      c.rect(0, 0, s, s, hexToRgba('#495439'));
       c.rect(0, 0, s, 4, hexToRgba('#7a8a5e'));
-      c.rect(4, 12, 24, 8, hexToRgba('#343b29'));
+      c.rect(0, s - 3, s, 3, hexToRgba('#2b3321'));
+      c.roundRect(3, 8, 12, 8, 3, hexToRgba('#636e4d'));
+      c.roundRect(17, 8, 12, 8, 3, hexToRgba('#576143'));
+      c.roundRect(6, 18, 20, 9, 3, hexToRgba('#38402c'));
       c.circle(6, 6, 1.5, INK);
       c.circle(26, 6, 1.5, INK);
+      break;
+    case 'tile_solid_spire':
+      // Floor 5 Crumbling Spire — Dark crimson-basalt masonry split with glowing spire cracks!
+      c.rect(0, 0, s, s, hexToRgba('#471d2c'));
+      c.rect(0, 0, s, 4, hexToRgba('#803242'));
+      c.rect(0, s - 4, s, 4, hexToRgba('#260e18'));
+      c.line(0, 15, s, 15, INK, 1.6);
+      c.line(15, 0, 15, 15, INK, 1.6);
+      c.line(8, 15, 8, s, INK, 1.6);
+      // Glowing molten crumbling spire fracture!
+      c.line(4, 3, 14, 14, C_ORG, 2.2);
+      c.line(14, 14, 24, 26, C_GOLD, 1.8);
+      c.line(14, 14, 25, 10, C_YEL, 1.3);
       break;
     case 'tile_one_way':
       c.rect(0, 0, s, 10, C_BRN);
@@ -2207,166 +2676,448 @@ export function buildKrunkedAtlas(): BuiltAtlas {
     p.add(`peppo_taunt_${i}`, 64, 64, 32, 59, (c) => drawPeppoPose(c, tauntConfigs[i]));
   }
 
-  // ---- 2. Chef Peppo Transformations (18) ----
+  // ---- 2. Chef Peppo Transformations (All 18 — Hilarious & Unmistakably Distinct!) ----
   p.add('peppo_transfo_knight', 64, 64, 32, 59, (c) => {
-    // Gleaming plate knight with plume & broadsword!
-    c.poly([[30, 8], [46, 11], [38, 20]], C_RED);
-    c.roundRect(20, 16, 24, 24, 6, C_STEEL);
-    c.rect(22, 24, 20, 5, INK);
-    c.circle(28, 26, 1.8, C_GOLD);
-    c.circle(36, 26, 1.8, C_GOLD);
-    c.roundRect(19, 38, 26, 16, 4, C_STEEL_D);
-    c.line(44, 42, 58, 18, C_STEEL_L, 4);
-    c.line(42, 36, 52, 42, C_GOLD, 3);
-    c.ellipse(25, 57, 5, 3, C_STEEL_D);
-    c.ellipse(39, 57, 5, 3, C_STEEL_D);
+    // Gleaming riveted steel knight armor with flowing crimson plume, mustache under visor & broadsword!
+    // Flowing crimson crest plume
+    c.poly([[29, 4], [49, 7], [44, 15], [34, 17]], C_RED);
+    c.poly([[32, 7], [46, 9], [41, 13]], C_RED_L);
+    // Steel pauldrons & breastplate
+    c.circle(18, 41, 7, C_STEEL);
+    c.circle(44, 41, 7, C_STEEL);
+    c.roundRect(18, 36, 26, 18, 5, C_STEEL_D);
+    c.roundRect(21, 38, 20, 12, 3, C_STEEL);
+    c.line(23, 40, 28, 46, C_STEEL_L, 2); // armor polish glint
+    // Golden belt & crest
+    c.rect(19, 48, 24, 4, C_GOLD);
+    // Domed steel helm + visor slit + glowing eyes + iconic mustache poking out!
+    c.roundRect(19, 14, 24, 23, 8, C_STEEL);
+    c.roundRect(21, 16, 10, 10, 4, C_STEEL_L);
+    c.rect(21, 22, 20, 6, INK);
+    c.circle(27, 25, 2, C_GOLD);
+    c.circle(36, 25, 2, C_GOLD);
+    // Peppo's mustache poking right under the knight visor!
+    c.poly([[22, 33], [27, 30], [35, 30], [41, 33], [38, 35], [25, 35]], INK);
+    // Oversized gleaming broadsword held high with golden crossguard!
+    c.poly([[45, 39], [59, 10], [61, 14], [49, 41]], C_STEEL_L);
+    c.line(47, 39, 58, 14, EYE_W, 1.5);
+    c.line(41, 34, 53, 40, C_GOLD, 3.5);
+    c.circle(44, 43, 3, C_GOLD_D);
+    // Armored sabatons
+    c.ellipse(24, 57, 6, 3.5, C_STEEL_D);
+    c.ellipse(38, 57, 6, 3.5, C_STEEL_D);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_ball', 64, 64, 32, 59, (c) => {
-    c.circle(32, 38, 21, C_CHEESE);
-    c.circle(36, 42, 15, C_CHEESE_D);
-    c.circle(25, 32, 5, C_YEL);
-    c.circle(40, 32, 4, C_YEL);
-    c.circle(27, 36, 4, EYE_W);
-    c.circle(37, 36, 4, EYE_W);
-    c.px(28, 36, INK);
-    c.px(38, 36, INK);
-    c.arc(32, 44, 6, 4, 0, Math.PI, INK, 2);
+    // Giant rolling swiss-cheese boulder with squished toque, dizzy eyes & flailing feet!
+    // Flailing shoes sticking out top-left & bottom-right
+    c.ellipse(12, 26, 6, 3.5, P2);
+    c.ellipse(52, 48, 6, 3.5, P2);
+    // Squished chef toque stuck to top of cheese ball
+    c.ellipse(28, 13, 9, 6, P0);
+    c.ellipse(35, 14, 7, 5, P1);
+    // Giant round cheddar boulder
+    c.circle(32, 37, 21, C_CHEESE);
+    c.circle(36, 41, 16, C_CHEESE_D);
+    c.circle(27, 32, 13, C_YEL);
+    // Swiss cheese craters
+    c.circle(19, 44, 4, C_CHEESE_D);
+    c.circle(45, 31, 3.5, C_CHEESE_D);
+    c.circle(38, 51, 3, C_CHEESE_D);
+    // Spinning cartoon motion arcs
+    c.arc(32, 37, 19, 19, -0.6, 0.9, EYE_W, 2);
+    c.arc(32, 37, 19, 19, 2.5, 3.8, C_ORG, 2);
+    // Frantic Peppo face squished in the middle!
+    c.ellipse(26, 35, 4.5, 5, EYE_W);
+    c.ellipse(37, 35, 4.5, 5, EYE_W);
+    c.circle(27, 34, 2, INK);
+    c.circle(36, 36, 2, INK);
+    c.poly([[21, 42], [28, 40], [36, 40], [43, 42], [38, 45], [26, 45]], INK);
+    c.circle(32, 47, 3.5, INK);
+    c.circle(32, 47.5, 2, C_RED);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_bomb', 64, 64, 32, 59, (c) => {
-    drawPeppoPose(c, { lean: 4, armL: [-6, -15], armR: [6, -15], eyes: 'wide', mouth: 'scream', sweat: true });
-    c.circle(32, 14, 10, P2);
-    c.circle(29, 11, 2.5, C_STEEL_L);
-    c.star(40, 6, 6, 2.5, 5, C_YEL);
-    c.circle(40, 6, 2, C_RED);
+    // Panicked sweating Peppo sprinting while holding a GIGANTIC sizzling iron bomb overhead!
+    drawPeppoPose(c, {
+      lean: 5,
+      squash: 5,
+      armL: [-9, -18],
+      armR: [9, -18],
+      wheelLegs: true,
+      eyes: 'wide',
+      mouth: 'scream',
+      sweat: true,
+      speedLines: true,
+    });
+    // Giant sizzling cartoon iron bomb overhead
+    c.circle(33, 16, 12, P2);
+    c.circle(29, 12, 3.5, C_STEEL_L);
+    c.rect(28, 3, 10, 4, C_STEEL_D); // bomb cap
+    c.line(23, 17, 43, 17, C_RED, 2.2); // red danger stripe
+    c.arc(38, 6, 7, 5, -Math.PI, 0.2, C_TAN, 2); // sizzling rope fuse
+    // Explosive sparkling fuse burst!
+    c.star(46, 8, 8, 3, 6, C_ORG);
+    c.star(46, 8, 5, 2, 6, C_YEL);
+    c.circle(46, 8, 2.2, EYE_W);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_fire_butt', 64, 64, 32, 59, (c) => {
-    c.poly([[18, 42], [46, 42], [32, 62]], C_ORG);
-    c.poly([[24, 44], [40, 44], [32, 58]], C_YEL);
-    drawPeppoPose(c, { squash: -8, armL: [-12, 8], armR: [12, 8], eyes: 'wide', mouth: 'scream', sweat: true });
+    // Airborne shrieking Peppo rocketing upward on a hilarious blazing rear jet-flame!
+    // Massive roaring multi-stage flame plume shooting downward
+    c.poly([[14, 38], [50, 38], [44, 54], [32, 63], [20, 54]], C_RED);
+    c.poly([[19, 39], [45, 39], [39, 52], [32, 60], [25, 52]], C_ORG);
+    c.poly([[24, 40], [40, 40], [32, 55]], C_YEL);
+    c.poly([[28, 41], [36, 41], [32, 49]], EYE_W);
+    // Smoke puffs on sides
+    c.circle(13, 52, 5, C_CREAM);
+    c.circle(51, 52, 5, C_CREAM);
+    // High-flying screaming Peppo holding his scorched backside!
+    drawPeppoPose(c, {
+      squash: -10,
+      hatTilt: 8,
+      armL: [-11, 10],
+      armR: [11, 10],
+      legL: [-11, -3],
+      legR: [11, -3],
+      eyes: 'wide',
+      mouth: 'scream',
+      sweat: true,
+    });
   });
   p.add('peppo_transfo_firemouth', 64, 64, 32, 59, (c) => {
-    c.poly([[42, 26], [62, 16], [62, 38], [42, 34]], C_ORG);
-    c.poly([[44, 28], [58, 22], [58, 34]], C_YEL);
-    drawPeppoPose(c, { lean: 5, eyes: 'rage', mouth: 'scream' });
+    // Spicy bright-red-faced Peppo blasting a HUGE flamethrower fireball forward!
+    drawPeppoPose(c, {
+      lean: 5,
+      armL: [-13, 2],
+      armR: [-7, 7],
+      eyes: 'rage',
+      mouth: 'scream',
+      speedLines: true,
+    });
+    // Spicy red heat blush on face + whistling steam from ears!
+    c.ellipse(34, 24, 8, 6, C_RED_L);
+    c.circle(17, 17, 4, EYE_W);
+    c.circle(12, 13, 3, C_CREAM);
+    // Huge roaring cartoon fire jet blasting out of mouth!
+    c.poly([[39, 26], [62, 12], [58, 25], [63, 35], [56, 42], [39, 33]], C_RED);
+    c.poly([[41, 27], [59, 17], [56, 26], [60, 34], [41, 32]], C_ORG);
+    c.poly([[42, 28], [55, 22], [55, 32]], C_YEL);
+    c.circle(46, 29, 3, EYE_W);
+    c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_ghost', 64, 64, 32, 59, (c) => {
-    c.ellipse(32, 32, 17, 20, C_GHOST);
-    c.tri(15, 42, 22, 57, 28, 44, C_GHOST);
-    c.tri(26, 44, 32, 58, 38, 44, C_GHOST);
-    c.tri(36, 44, 43, 57, 49, 42, C_GHOST);
-    c.ellipse(32, 12, 10, 7, C_GHOST_D);
-    c.circle(27, 28, 4.5, EYE_W);
-    c.circle(37, 28, 4.5, EYE_W);
-    c.circle(28, 28, 2, INK);
-    c.circle(38, 28, 2, INK);
-    c.ellipse(32, 39, 5, 6, INK);
+    // Translucent floating mint-cyan ectoplasm Peppo with spectral toque, mustache & spooky wisps!
+    // Floating ectoplasm orbit motes
+    c.circle(10, 22, 3.5, C_CYAN);
+    c.circle(54, 18, 3, C_GHOST);
+    c.circle(52, 46, 2.5, C_CYAN);
+    // Glowing translucent spectral chef toque!
+    c.ellipse(27, 11, 8, 6, C_GHOST);
+    c.ellipse(37, 11, 8, 6, C_GHOST_D);
+    c.ellipse(32, 8, 9, 6, C_GHOST);
+    // Billowing ghostly sheet body with wavy ecto-tail
+    c.ellipse(32, 31, 18, 19, C_GHOST);
+    c.ellipse(35, 34, 13, 14, C_GHOST_D);
+    c.ellipse(29, 28, 12, 13, C_GHOST);
+    c.tri(14, 38, 19, 57, 27, 44, C_GHOST);
+    c.tri(24, 44, 32, 60, 40, 44, C_GHOST_D);
+    c.tri(37, 44, 45, 57, 50, 38, C_GHOST);
+    // Spooky outstretched phantom arms
+    c.ellipse(12, 34, 6, 4, C_GHOST);
+    c.ellipse(52, 34, 6, 4, C_GHOST);
+    // Glowing wide haunted eyes + iconic floating black mustache + "OOOOH" wail mouth!
+    c.ellipse(26, 27, 5, 6, EYE_W);
+    c.ellipse(38, 27, 5, 6, EYE_W);
+    c.circle(27, 27, 2.2, C_PURP_D);
+    c.circle(39, 27, 2.2, C_PURP_D);
+    c.poly([[21, 35], [27, 33], [37, 33], [43, 35], [39, 38], [25, 38]], INK);
+    c.ellipse(32, 43, 5.5, 6.5, INK);
+    c.ellipse(32, 44, 3, 3.5, C_CYAN_D);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_beak', 64, 64, 32, 59, (c) => {
-    drawPeppoPose(c, { lean: 2, mouth: 'grin' });
-    // Goofy white cartoon chicken pal perched on head!
-    c.ellipse(32, 13, 10, 7, EYE_W);
-    c.tri(40, 11, 49, 13, 40, 16, C_ORG);
-    c.circle(30, 6, 3, C_RED);
-    c.circle(35, 11, 2, INK);
+    // Cheerful Peppo with an adorable goofy plump white chicken pal perched on his hat!
+    drawPeppoPose(c, { lean: 2, armL: [-13, -4], armR: [14, -4], eyes: 'wide', mouth: 'grin' });
+    // Plump white cartoon chicken buddy clinging to toque!
+    c.ellipse(32, 13, 12, 8, EYE_W);
+    c.ellipse(29, 15, 7, 5, C_CREAM);
+    // Flapping little white wing + tail feathers
+    c.tri(16, 10, 22, 15, 19, 5, EYE_W);
+    c.ellipse(27, 14, 5, 3, C_STONE_L);
+    // Bright red floppy comb & wattle
+    c.circle(28, 5, 3.5, C_RED);
+    c.circle(33, 4, 3.8, C_RED);
+    c.circle(38, 6, 3, C_RED);
+    c.circle(41, 17, 2.5, C_RED);
+    // Expressive googly chicken eye + pointy orange beak!
+    c.circle(37, 11, 3.2, EYE_W);
+    c.circle(38, 11, 1.6, INK);
+    c.tri(42, 10, 53, 13, 42, 16, C_ORG);
+    c.line(42, 13, 51, 13, INK, 1.2);
+    // Orange bird claws gripping Peppo's toque
+    c.line(29, 20, 27, 23, C_ORG, 1.8);
+    c.line(35, 20, 37, 23, C_ORG, 1.8);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_weenie', 64, 64, 32, 59, (c) => {
-    // Giant smiling hotdog mount!
-    c.roundRect(10, 34, 44, 16, 8, C_BRN);
-    c.roundRect(14, 42, 36, 9, 4, C_CREAM);
-    c.line(16, 38, 46, 38, C_YEL, 2.5);
-    c.circle(47, 40, 2.5, EYE_W);
-    c.px(48, 40, INK);
-    c.ellipse(20, 55, 4, 3, INK);
-    c.ellipse(44, 55, 4, 3, INK);
-    drawPeppoHead(c, 30, 24, -2, 'wide', 'grin', false);
+    // Hilarious giant smiling hotdog-in-a-bun mount with squiggly mustard & cowboy-riding Peppo!
+    // Peppo riding wildly on top holding imaginary reins!
+    c.ellipse(29, 29, 9, 7, P2);
+    c.line(33, 28, 44, 33, P0, 4.5);
+    c.circle(45, 33, 3.5, P4);
+    drawPeppoHead(c, 28, 22, -5, 'wide', 'scream', true);
+    // Giant toasted bun & glossy plump sausage mount!
+    c.roundRect(7, 36, 50, 15, 7.5, C_BRN);
+    c.roundRect(10, 38, 42, 5, 3, C_RED);
+    c.roundRect(11, 44, 42, 10, 5, C_TAN);
+    c.roundRect(14, 45, 36, 4, 2, C_CREAM);
+    // Bright yellow squiggly mustard zigzag across the hotdog!
+    c.line(14, 40, 20, 37, C_YEL, 2.6);
+    c.line(20, 37, 26, 41, C_YEL, 2.6);
+    c.line(26, 41, 32, 37, C_YEL, 2.6);
+    c.line(32, 37, 38, 41, C_YEL, 2.6);
+    c.line(38, 41, 44, 38, C_YEL, 2.6);
+    // Cute smiling hotdog face & sprinting tiny legs!
+    c.circle(49, 41, 3.2, EYE_W);
+    c.circle(50, 41, 1.6, INK);
+    c.arc(51, 45, 4, 2.5, 0, Math.PI, INK, 1.5);
+    c.line(18, 53, 14, 58, INK, 3);
+    c.line(28, 53, 30, 58, INK, 3);
+    c.line(44, 53, 49, 58, INK, 3);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_barrel', 64, 64, 32, 59, (c) => {
-    c.roundRect(15, 20, 34, 34, 8, C_BRN);
-    c.rect(15, 25, 34, 4, C_STEEL_D);
-    c.rect(15, 44, 34, 4, C_STEEL_D);
-    c.circle(26, 35, 3.5, EYE_W);
-    c.circle(38, 35, 3.5, EYE_W);
-    c.px(27, 35, INK);
-    c.px(39, 35, INK);
-    c.ellipse(24, 57, 5, 3, P2);
-    c.ellipse(40, 57, 5, 3, P2);
+    // Chunky oak barrel with iron hoops, Peppo's hat popping out the top & eyes peeking through planks!
+    // Chef toque popped straight out of the top!
+    c.ellipse(28, 12, 8, 6, P0);
+    c.ellipse(36, 13, 8, 6, P1);
+    c.ellipse(32, 9, 9, 6, P0);
+    // Stubby sprinting shoes underneath
+    c.ellipse(22, 57, 6.5, 3.5, P2);
+    c.ellipse(42, 57, 6.5, 3.5, P2);
+    // Bulging wooden barrel body with plank seams
+    c.ellipse(32, 37, 21, 20, C_BRN);
+    c.roundRect(14, 19, 36, 36, 9, C_BRN);
+    c.rect(18, 20, 5, 34, C_BRN_L);
+    c.line(24, 19, 24, 55, C_BRN_D, 1.6);
+    c.line(32, 19, 32, 55, C_BRN_D, 1.6);
+    c.line(40, 19, 40, 55, C_BRN_D, 1.6);
+    // Riveted dark iron barrel hoops
+    c.rect(13, 24, 38, 5, C_STEEL_D);
+    c.rect(13, 45, 38, 5, C_STEEL_D);
+    c.circle(18, 26, 1.5, C_STEEL_L);
+    c.circle(46, 26, 1.5, C_STEEL_L);
+    c.circle(18, 47, 1.5, C_STEEL_L);
+    c.circle(46, 47, 1.5, C_STEEL_L);
+    // Dark peek-slot with Peppo's frantic wide eyes & mustache!
+    c.roundRect(19, 31, 26, 11, 3, INK);
+    c.ellipse(26, 36, 4, 4.5, EYE_W);
+    c.ellipse(38, 36, 4, 4.5, EYE_W);
+    c.circle(27, 36, 1.8, INK);
+    c.circle(39, 36, 1.8, INK);
+    c.poly([[23, 41], [32, 39], [41, 41], [38, 44], [26, 44]], INK);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_rocket', 64, 64, 32, 59, (c) => {
-    c.poly([[4, 38], [16, 30], [16, 46]], C_ORG);
-    c.poly([[8, 38], [16, 34], [16, 42]], C_YEL);
-    c.roundRect(16, 28, 32, 18, 6, C_RED);
-    c.tri(46, 28, 46, 46, 60, 37, EYE_W);
-    c.tri(16, 28, 26, 28, 16, 20, C_STEEL);
-    c.tri(16, 46, 26, 46, 16, 54, C_STEEL);
-    drawPeppoHead(c, 32, 23, -6, 'rage', 'scream', false);
+    // Retro red-and-white rocket blasting horizontally with terrified clinging Peppo & huge exhaust flame!
+    // Blazing multi-layer jet exhaust plume on the left
+    c.poly([[1, 39], [18, 28], [18, 50]], C_RED);
+    c.poly([[5, 39], [18, 32], [18, 46]], C_ORG);
+    c.poly([[10, 39], [18, 35], [18, 43]], C_YEL);
+    c.circle(16, 39, 3.5, EYE_W);
+    // Tail fins
+    c.tri(15, 29, 28, 29, 13, 17, C_STEEL_D);
+    c.tri(15, 49, 28, 49, 13, 60, C_STEEL_D);
+    // Striped rocket fuselage & gleaming nosecone
+    c.roundRect(16, 29, 32, 20, 6, C_RED);
+    c.rect(25, 29, 8, 20, EYE_W); // crisp white rocket stripe
+    c.rect(38, 29, 4, 20, C_YEL);
+    c.circle(29, 39, 4.5, C_CYAN); // porthole window
+    c.circle(28, 38, 1.8, EYE_W);
+    c.tri(47, 29, 47, 49, 62, 39, EYE_W);
+    c.tri(47, 39, 47, 49, 62, 39, C_STEEL_L);
+    // Screaming Peppo clinging tightly on top with hat whipped backward!
+    c.line(25, 30, 36, 33, P0, 4.5);
+    c.circle(37, 33, 3.5, P4);
+    drawPeppoHead(c, 31, 22, -9, 'rage', 'scream', true);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_golf_carry', 64, 64, 32, 59, (c) => {
-    drawPeppoPose(c, { lean: 3, armR: [16, -6], mouth: 'grin' });
-    c.line(46, 22, 56, 48, C_STEEL_L, 2.5);
-    c.rect(52, 46, 8, 4, C_STEEL);
+    // Sporty golfing Peppo swinging a gleaming iron club with green visor & dimpled golf ball!
+    // Comic swing whoosh arc behind club
+    c.arc(44, 34, 16, 16, -1.2, 0.9, C_CYAN, 2.5);
+    drawPeppoPose(c, { lean: 4, armL: [-8, -6], armR: [15, -7], eyes: 'smug', mouth: 'grin' });
+    // Jaunty green golf visor right across forehead!
+    c.rect(26, 17, 21, 4, C_GRN);
+    c.rect(36, 18, 14, 3, C_LIME);
+    // Gleaming silver golf club held in swing
+    c.line(46, 20, 56, 48, C_STEEL_L, 3);
+    c.roundRect(51, 46, 10, 5, 2, C_STEEL_D);
+    // Dimpled cartoon golf ball ready by feet!
+    c.circle(15, 53, 6, EYE_W);
+    c.px(13, 51, C_STONE);
+    c.px(17, 54, C_STONE);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_cheese_sticky', 64, 64, 32, 59, (c) => {
-    c.ellipse(32, 38, 19, 20, C_CHEESE);
-    c.ellipse(20, 52, 6, 8, C_CHEESE_D);
-    c.ellipse(44, 51, 6, 8, C_CHEESE_D);
-    c.circle(27, 32, 4, EYE_W);
-    c.circle(37, 32, 4, EYE_W);
-    c.px(28, 32, INK);
-    c.px(38, 32, INK);
-    c.arc(32, 42, 6, 3, 0, Math.PI, INK, 1.8);
+    // Gooey dripping cheddar-slime Peppo covered in stretchy melted mozzarella tendrils!
+    // Sticky cheese puddles & stretching wall-climb drips
+    c.ellipse(15, 54, 8, 6, C_CHEESE_D);
+    c.ellipse(49, 54, 8, 6, C_CHEESE_D);
+    c.ellipse(32, 56, 22, 6, C_CHEESE);
+    // Stretchy cheese tendrils sticking off arms
+    c.line(14, 34, 6, 44, C_CHEESE, 4);
+    c.line(50, 34, 58, 44, C_CHEESE, 4);
+    c.circle(6, 45, 3.5, C_YEL);
+    c.circle(58, 45, 3.5, C_YEL);
+    // Melted gooey cheese body + melty toque blob!
+    c.ellipse(32, 15, 11, 8, C_YEL);
+    c.ellipse(32, 37, 20, 21, C_CHEESE);
+    c.ellipse(36, 41, 14, 15, C_CHEESE_D);
+    c.ellipse(28, 31, 12, 11, C_YEL);
+    // Melty goo drips hanging off chin/brow
+    c.ellipse(21, 45, 3.5, 7, C_YEL);
+    c.ellipse(43, 44, 3.5, 7, C_CHEESE_D);
+    // Confused wide cartoon Peppo eyes + mustache poking out of goo!
+    c.ellipse(26, 31, 4.5, 5, EYE_W);
+    c.ellipse(38, 31, 4.5, 5, EYE_W);
+    c.circle(27, 32, 2, INK);
+    c.circle(39, 30, 2, INK);
+    c.poly([[21, 39], [28, 37], [36, 37], [43, 39], [39, 42], [25, 42]], INK);
+    c.ellipse(32, 45, 4, 3, INK);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_trash_roll', 64, 64, 32, 59, (c) => {
-    c.roundRect(14, 24, 36, 30, 6, C_STEEL);
-    c.line(20, 26, 20, 52, C_STEEL_D, 2);
-    c.line(32, 26, 32, 52, C_STEEL_D, 2);
-    c.line(44, 26, 44, 52, C_STEEL_D, 2);
-    c.circle(46, 36, 4, EYE_W);
-    c.px(47, 36, INK);
+    // High-speed sliding galvanized trash-can rocket sled with Peppo peeking out the lid & sparks!
+    // Speed sparks shooting off bottom edge
+    c.star(10, 54, 7, 3, 5, C_YEL);
+    c.line(2, 48, 16, 48, C_ORG, 2.5);
+    // Goofy banana peel & fishbone sticking out back
+    c.arc(12, 26, 7, 6, 0.3, 2.5, C_YEL, 3);
+    // Sideways corrugated galvanized steel trash can!
+    c.roundRect(12, 24, 37, 30, 6, C_STEEL);
+    c.rect(14, 26, 33, 6, C_STEEL_L); // metallic highlight
+    c.line(20, 26, 20, 52, C_STEEL_D, 2.5);
+    c.line(28, 26, 28, 52, C_STEEL_D, 2.5);
+    c.line(36, 26, 36, 52, C_STEEL_D, 2.5);
+    c.line(44, 26, 44, 52, C_STEEL_D, 2.5);
+    // Cracked-open front trash lid with Peppo's frantic wide eyes & mustache peeking out!
+    c.rect(44, 29, 8, 20, INK);
+    c.ellipse(47, 35, 3.8, 4.2, EYE_W);
+    c.circle(48, 35, 1.6, INK);
+    c.poly([[44, 42], [53, 41], [51, 45], [44, 45]], INK);
+    // Tilted steel lid shield + handle at front
+    c.roundRect(51, 22, 6, 34, 3, C_STEEL_L);
+    c.arc(57, 39, 4, 6, -1.4, 1.4, C_STEEL_D, 2.5);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_boxed_flat', 64, 64, 32, 59, (c) => {
-    c.rect(12, 38, 40, 18, C_CREAM);
-    c.rect(12, 38, 40, 5, C_RED);
-    c.circle(26, 48, 3, EYE_W);
-    c.circle(38, 48, 3, EYE_W);
-    c.px(27, 48, INK);
-    c.px(39, 48, INK);
-    c.ellipse(22, 58, 4, 2, P2);
-    c.ellipse(42, 58, 4, 2, P2);
+    // Hilariously accordion-flattened pizzeria delivery box with glaring eyes peeking from lid slit!
+    // Tiny flat shuffling cartoon shoes underneath
+    c.ellipse(20, 58, 6, 2.5, P2);
+    c.ellipse(44, 58, 6, 2.5, P2);
+    // Flat cardboard pizza box body with pizzeria stripe & stamp!
+    c.rect(8, 36, 48, 20, C_CREAM);
+    c.rect(8, 36, 48, 6, C_RED);
+    c.rect(10, 37, 44, 2, EYE_W); // crisp trim line
+    // Little pizzeria emblem on top lid
+    c.circle(32, 39, 3, C_GOLD);
+    // Cracked dark lid slit revealing squished flat glaring Peppo eyes & mustache!
+    c.rect(13, 44, 38, 8, INK);
+    c.rect(20, 45, 8, 5, EYE_W);
+    c.rect(36, 45, 8, 5, EYE_W);
+    c.circle(25, 48, 1.8, INK);
+    c.circle(41, 48, 1.8, INK);
+    c.poly([[23, 52], [32, 50], [41, 52], [38, 54], [26, 54]], INK);
+    // Squished flat chef toque ribbon on top!
+    c.ellipse(32, 34, 12, 3, P0);
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_inferno_pepper', 64, 64, 32, 59, (c) => {
-    c.star(32, 34, 28, 16, 10, C_RED);
-    c.star(32, 34, 21, 12, 10, C_ORG);
-    drawPeppoPose(c, { lean: 8, eyes: 'rage', mouth: 'scream', capeFlame: true });
+    // Blazing Super-Spicy Inferno Pepper Power-Up! Roaring flame corona, fiery boots & chili sparks!
+    c.star(32, 33, 30, 17, 12, C_RED);
+    c.star(32, 33, 23, 13, 10, C_ORG);
+    c.star(32, 33, 16, 9, 8, C_YEL);
+    // Jet flames kicking off feet
+    c.poly([[10, 56], [26, 48], [22, 61]], C_ORG);
+    c.poly([[38, 48], [54, 56], [42, 61]], C_ORG);
+    drawPeppoPose(c, {
+      lean: 9,
+      squash: -3,
+      hatTilt: -9,
+      armL: [-16, -6],
+      armR: [17, -6],
+      eyes: 'rage',
+      mouth: 'scream',
+      capeFlame: true,
+      speedLines: true,
+    });
+    // Flaming chili crest flickering right off chef hat!
+    c.tri(24, 6, 36, 6, 30, 1, C_YEL);
+    c.tri(18, 11, 26, 11, 21, 3, C_ORG);
+    c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_cross', 64, 64, 32, 59, (c) => {
-    c.star(32, 34, 27, 15, 8, C_GOLD);
-    c.ring(32, 8, 11, 4, 2.5, C_YEL);
-    drawPeppoPose(c, { eyes: 'smug', mouth: 'grin' });
+    // Radiant Holy Exorcist Peppo with celestial golden starburst, floating halo & ornate golden cross!
+    // Golden radiant starburst + light rays
+    c.star(32, 33, 29, 16, 10, C_GOLD);
+    c.star(32, 33, 21, 11, 10, C_YEL);
+    c.circle(32, 33, 14, EYE_W);
+    // Floating shining angel halo above chef hat!
+    c.ring(32, 6, 13, 4.5, 2.5, C_GOLD);
+    c.ring(32, 5.5, 11, 3.5, 1.5, EYE_W);
+    drawPeppoPose(c, { lean: 2, armL: [-10, 4], armR: [16, -4], eyes: 'smug', mouth: 'grin' });
+    // Gleaming ornate golden cross thrust forward!
+    c.rect(47, 17, 6, 28, C_GOLD);
+    c.rect(40, 24, 20, 6, C_GOLD);
+    c.rect(49, 19, 2, 24, EYE_W);
+    c.rect(42, 26, 16, 2, EYE_W);
+    c.star(50, 27, 7, 2.5, 4, EYE_W);
+    c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_shotgun', 64, 64, 32, 59, (c) => {
-    drawPeppoPose(c, { lean: 3, armR: [14, 3], eyes: 'shades', mouth: 'smug' });
-    c.rect(34, 34, 25, 6, C_STEEL_D);
-    c.rect(34, 34, 25, 2, C_STEEL_L);
-    c.rect(28, 36, 9, 6, C_BRN);
+    // Hardboiled action-hero Peppo wielding a chunky double-barreled pump shotgun & red shell sash!
+    drawPeppoPose(c, {
+      lean: 4,
+      armL: [6, 6],
+      armR: [15, 3],
+      eyes: 'shades',
+      mouth: 'smug',
+    });
+    // Diagonal red shotgun-shell bandolier across apron!
+    c.line(24, 31, 39, 44, C_BRN_D, 4.5);
+    c.rect(26, 32, 3, 4, C_RED);
+    c.rect(31, 36, 3, 4, C_RED);
+    c.rect(35, 40, 3, 4, C_RED);
+    // Chunky oversized double-barreled pump shotgun!
+    c.poly([[22, 37], [33, 34], [34, 42], [23, 44]], C_BRN); // walnut stock
+    c.rect(32, 32, 28, 7, C_STEEL_D); // twin barrels
+    c.rect(32, 32, 28, 3, C_STEEL_L); // top sheen
+    c.rect(38, 38, 12, 4, C_BRN_L); // ribbed pump grip
+    c.rect(56, 31, 4, 9, C_GOLD); // brass muzzle clamp
     c.inkOutline(INK, 1);
   });
   p.add('peppo_transfo_revolver', 64, 64, 32, 59, (c) => {
-    drawPeppoPose(c, { lean: 4, armR: [15, 0], eyes: 'shades', mouth: 'smug' });
-    c.rect(40, 29, 16, 5, C_STEEL_L);
-    c.circle(43, 33, 3, C_GOLD);
-    c.rect(38, 33, 5, 6, C_BRN);
+    // Western quick-draw Peppo with red bandana neckerchief, shades & gleaming brass-cylinder revolver!
+    drawPeppoPose(c, {
+      lean: 5,
+      armL: [-12, 4],
+      armR: [16, -1],
+      eyes: 'shades',
+      mouth: 'smug',
+    });
+    // Red cowboy neckerchief bandana!
+    c.tri(24, 30, 42, 30, 34, 40, C_RED);
+    c.line(27, 32, 39, 32, C_GOLD, 1.4);
+    // Gleaming six-shooter revolver aimed dead ahead!
+    c.roundRect(38, 33, 6, 8, 2, C_BRN); // wooden handle
+    c.rect(40, 27, 20, 6, C_STEEL_D); // barrel
+    c.rect(40, 27, 20, 2.5, C_STEEL_L); // chrome highlight
+    c.circle(45, 32, 4.2, C_GOLD); // brass cylinder
+    c.circle(45, 32, 1.5, C_GOLD_D);
+    c.rect(57, 25, 3, 3, C_STEEL_L); // front sight
+    c.star(59, 27, 4.5, 1.5, 4, EYE_W); // metallic barrel glint!
     c.inkOutline(INK, 1);
   });
 
@@ -2652,18 +3403,43 @@ export function buildKrunkedAtlas(): BuiltAtlas {
     c.inkOutline(INK, 1);
   });
   p.add('prop_taxi_warp', 64, 44, 32, 40, (c) => {
-    c.roundRect(6, 16, 52, 20, 6, C_YEL);
-    c.roundRect(16, 6, 30, 14, 5, C_YEL);
-    c.rect(20, 9, 22, 8, C_CYAN);
-    for (let x = 10; x < 52; x += 8) c.rect(x, 26, 4, 4, INK);
-    c.circle(16, 37, 6, P2);
-    c.circle(48, 37, 6, P2);
+    // Roof glowing TAXI checker topper sign!
+    c.roundRect(24, 2, 16, 6, 2, C_GOLD);
+    c.rect(26, 3, 12, 4, EYE_W);
+    c.line(28, 5, 36, 5, INK, 1.4);
+    // Yellow checkered cab body + glossy roof & windshield!
+    c.roundRect(15, 8, 32, 14, 5, C_YEL);
+    c.rect(19, 11, 24, 8, C_CYAN);
+    c.line(22, 12, 26, 17, EYE_W, 1.5); // glass reflection
+    c.roundRect(5, 18, 54, 19, 6, C_YEL);
+    c.rect(7, 19, 50, 4, C_GOLD);
+    // Bold black-and-white checkered cab stripe!
+    c.rect(7, 25, 50, 6, EYE_W);
+    for (let x = 8; x < 55; x += 6) {
+      c.rect(x, 25, 3, 3, INK);
+      c.rect(x + 3, 28, 3, 3, INK);
+    }
+    // Glowing front headlight, red taillight & chrome bumpers
+    c.rect(55, 21, 4, 6, EYE_W);
+    c.rect(5, 21, 3, 5, C_RED);
+    c.rect(4, 32, 6, 3, C_STEEL_L);
+    c.rect(54, 32, 6, 3, C_STEEL_L);
+    // Chunky cartoon wheels with shiny hubcaps
+    c.circle(16, 37, 6.2, P2);
+    c.circle(16, 37, 2.8, C_STEEL_L);
+    c.circle(48, 37, 6.2, P2);
+    c.circle(48, 37, 2.8, C_STEEL_L);
     c.inkOutline(INK, 1);
   });
   p.add('prop_alarm_sensor', 36, 36, 18, 18, (c) => {
-    c.circle(18, 18, 12, C_RED);
-    c.circle(18, 18, 7, C_YEL);
-    c.circle(18, 18, 3, EYE_W);
+    // Industrial mounting bracket & ribbed rotating red siren dome!
+    c.roundRect(7, 24, 22, 8, 3, C_STEEL_D);
+    c.rect(10, 25, 16, 3, C_STEEL_L);
+    c.circle(18, 17, 12, C_RED_D);
+    c.circle(18, 17, 10, C_RED);
+    c.circle(18, 16, 6.5, C_ORG);
+    c.circle(18, 15, 3.8, C_YEL);
+    c.circle(16, 13, 2, EYE_W);
     c.inkOutline(INK, 1);
   });
   p.add('prop_hub_stage_gate', 80, 96, 40, 92, (c) => {
@@ -2748,19 +3524,30 @@ export function buildKrunkedAtlas(): BuiltAtlas {
     p.add(`toppin_${i}`, 36, 36, 18, 33, (c) => drawToppin(c, i));
   }
 
-  // ---- 11. World & Destructible Tiles (21) ----
+  // ---- 11. World & Destructible Tiles (32: 21 original + 11 Wave 2 Floor-specific tiles) ----
   const tileKeys = [
     'tile_break_marble',
     'tile_break_metal',
     'tile_ice_solid',
     'tile_solid_stone',
+    'tile_solid_lobby_brick',
+    'tile_solid_catacomb',
     'tile_solid_brick',
+    'tile_solid_mesa',
+    'tile_solid_graveyard',
     'tile_solid_wood',
+    'tile_solid_resort',
+    'tile_solid_orbit',
+    'tile_solid_golf',
+    'tile_solid_slum_brick',
+    'tile_solid_sewer',
     'tile_solid_metal',
     'tile_solid_cheese',
     'tile_solid_neon',
     'tile_solid_snow',
+    'tile_solid_manor',
     'tile_solid_war',
+    'tile_solid_spire',
     'tile_one_way',
     'tile_pillar_closed',
     'tile_pillar_open',
@@ -2781,7 +3568,7 @@ export function buildKrunkedAtlas(): BuiltAtlas {
     p.add(`rank_${g}`, 48, 48, 24, 24, (c) => drawRankBadge(c, g));
   }
 
-  // ---- 13. FX Sprites & Parallax Motifs ----
+  // ---- 13. FX Sprites & 5-Floor Parallax Motifs ----
   p.add('fx_white_px', 4, 4, 0, 0, (c) => c.rect(0, 0, 4, 4, EYE_W));
   p.add('fx_circle', 24, 24, 12, 12, (c) => c.circle(12, 12, 10, EYE_W));
   p.add('fx_starburst', 48, 48, 24, 24, (c) => {
@@ -2809,60 +3596,354 @@ export function buildKrunkedAtlas(): BuiltAtlas {
   p.add('fx_spark', 20, 20, 10, 10, (c) => {
     c.star(10, 10, 9, 2.5, 4, EYE_W);
   });
+  // Wave 2 Shotgun / Revolver directional cartoon muzzle flash!
+  p.add('fx_muzzle_flash', 48, 32, 6, 16, (c) => {
+    c.poly(
+      [
+        [4, 16],
+        [15, 5],
+        [21, 11],
+        [45, 7],
+        [33, 16],
+        [46, 24],
+        [20, 21],
+        [14, 27],
+      ],
+      C_ORG
+    );
+    c.poly(
+      [
+        [5, 16],
+        [16, 9],
+        [37, 12],
+        [27, 16],
+        [37, 20],
+        [16, 23],
+      ],
+      C_YEL
+    );
+    c.ellipse(14, 16, 8, 4.5, EYE_W);
+    c.inkOutline(INK, 1);
+  });
+  // Wave 2 Rotating red alarm sensor / taxi headlight cone!
+  p.add('fx_beacon_cone', 64, 32, 4, 16, (c) => {
+    c.poly(
+      [
+        [3, 15],
+        [62, 2],
+        [62, 30],
+        [3, 17],
+      ],
+      [255, 255, 255, 120]
+    );
+    c.poly(
+      [
+        [4, 15],
+        [52, 8],
+        [52, 24],
+        [4, 17],
+      ],
+      [255, 255, 255, 185]
+    );
+  });
 
-  // Parallax motifs
+  // ---- Parallax Motifs (Original 8 Enriched + 13 Wave 2 Floor 1-5 Signature Landmarks) ----
   p.add('bg_cloud', 96, 48, 48, 24, (c) => {
-    c.ellipse(30, 30, 22, 14, EYE_W);
-    c.ellipse(54, 26, 26, 18, EYE_W);
-    c.ellipse(72, 32, 18, 12, C_CREAM);
+    c.ellipse(28, 30, 22, 14, C_CREAM);
+    c.ellipse(54, 25, 26, 18, EYE_W);
+    c.ellipse(74, 32, 18, 12, C_CREAM);
+    c.ellipse(38, 23, 18, 12, EYE_W);
     c.inkOutline(INK, 1);
   });
   p.add('bg_tower_silhouette', 96, 128, 48, 128, (c) => {
-    c.rect(20, 24, 56, 104, hexToRgba('#2d2240'));
-    c.rect(14, 16, 14, 14, hexToRgba('#2d2240'));
-    c.rect(41, 16, 14, 14, hexToRgba('#2d2240'));
-    c.rect(68, 16, 14, 14, hexToRgba('#2d2240'));
-    c.rect(32, 46, 10, 16, C_GOLD);
-    c.rect(54, 46, 10, 16, C_GOLD);
-    c.rect(42, 78, 12, 20, C_ORG);
+    c.rect(20, 24, 56, 104, C_PLUM_D);
+    c.rect(24, 28, 14, 96, C_PLUM);
+    c.rect(14, 14, 14, 14, C_PLUM_D);
+    c.rect(41, 14, 14, 14, C_PLUM_D);
+    c.rect(68, 14, 14, 14, C_PLUM_D);
+    // Pointed banner spire on roof
+    c.tri(34, 16, 62, 16, 48, 2, C_PLUM);
+    c.rect(31, 44, 11, 17, C_GOLD);
+    c.rect(54, 44, 11, 17, C_GOLD);
+    c.roundRect(40, 76, 16, 26, 7, C_ORG);
+    c.line(48, 76, 48, 102, INK, 2);
+  });
+  p.add('bg_castle_keep', 96, 128, 48, 128, (c) => {
+    // Floor 1 Lobby & Keep — Multi-turret gothic purple cartoon castle with flags!
+    c.rect(10, 46, 76, 82, C_PLUM_D);
+    c.rect(10, 34, 20, 94, C_PLUM);
+    c.rect(66, 34, 20, 94, C_PLUM);
+    c.rect(34, 22, 28, 106, C_PLUM_D);
+    c.tri(6, 36, 34, 36, 20, 10, C_RED_D);
+    c.tri(62, 36, 90, 36, 76, 10, C_RED_D);
+    c.tri(30, 24, 66, 24, 48, 2, C_RED);
+    // Pennant flags
+    c.tri(48, 2, 62, 6, 48, 10, C_GOLD);
+    // Glowing arched castle windows & portcullis
+    c.roundRect(16, 52, 8, 14, 4, C_GOLD);
+    c.roundRect(72, 52, 8, 14, 4, C_GOLD);
+    c.roundRect(42, 36, 12, 18, 5, C_YEL);
+    c.roundRect(36, 92, 24, 36, 11, INK);
+    c.line(44, 94, 44, 126, C_STEEL_D, 2);
+    c.line(52, 94, 52, 126, C_STEEL_D, 2);
   });
   p.add('bg_pizza_moon', 64, 64, 32, 32, (c) => {
-    c.circle(32, 32, 27, C_CHEESE);
-    c.circle(22, 24, 5, C_RED);
-    c.circle(40, 22, 4, C_RED);
-    c.circle(34, 40, 6, C_RED);
-    c.circle(20, 42, 3, C_CHEESE_D);
+    c.circle(32, 32, 28, C_BRN_L);
+    c.circle(32, 32, 25, C_CHEESE);
+    c.circle(22, 23, 5, C_RED);
+    c.circle(41, 21, 4.5, C_RED);
+    c.circle(35, 41, 6, C_RED);
+    c.circle(19, 41, 3.5, C_CHEESE_D);
+    c.circle(45, 36, 3, C_CHEESE_D);
     c.inkOutline(INK, 1);
   });
   p.add('bg_pillar_arch', 64, 128, 32, 128, (c) => {
-    c.rect(8, 0, 16, 128, hexToRgba('#453759'));
-    c.rect(40, 0, 16, 128, hexToRgba('#453759'));
-    c.rect(0, 0, 64, 20, hexToRgba('#5e4c78'));
-    c.ellipse(32, 26, 16, 14, CLEAR);
+    c.rect(6, 0, 16, 128, C_PLUM_D);
+    c.rect(42, 0, 16, 128, C_PLUM_D);
+    c.rect(0, 0, 64, 24, C_PLUM);
+    c.clearEllipse(32, 26, 14, 14);
+    c.rect(4, 20, 20, 5, C_PLUM_L);
+    c.rect(40, 20, 20, 5, C_PLUM_L);
   });
   p.add('bg_tree', 64, 96, 32, 96, (c) => {
-    c.rect(26, 54, 12, 42, C_BRN_D);
-    c.circle(32, 36, 22, C_GRN_D);
-    c.circle(20, 44, 14, C_GRN_D);
-    c.circle(44, 44, 14, C_GRN_D);
-    c.circle(30, 30, 12, C_GRN);
+    c.rect(25, 52, 14, 44, C_BRN_D);
+    c.rect(27, 54, 5, 40, C_BRN);
+    c.circle(32, 35, 23, C_GRN_D);
+    c.circle(19, 44, 15, C_GRN_D);
+    c.circle(45, 44, 15, C_GRN_D);
+    c.circle(30, 29, 13, C_GRN);
+    c.circle(23, 38, 8, C_GRN);
   });
   p.add('bg_cactus', 48, 80, 24, 80, (c) => {
-    c.roundRect(18, 12, 12, 68, 6, C_GRN_D);
-    c.roundRect(6, 28, 14, 10, 4, C_GRN_D);
-    c.roundRect(6, 18, 8, 18, 4, C_GRN_D);
-    c.roundRect(28, 36, 14, 10, 4, C_GRN_D);
-    c.roundRect(34, 24, 8, 20, 4, C_GRN_D);
+    // Enriched Floor 2 Western saguaro cactus with vertical ribs & desert blossom!
+    c.roundRect(17, 12, 14, 68, 6, C_GRN_D);
+    c.roundRect(5, 29, 14, 10, 4, C_GRN_D);
+    c.roundRect(5, 17, 9, 19, 4, C_GRN_D);
+    c.roundRect(29, 36, 14, 10, 4, C_GRN_D);
+    c.roundRect(34, 23, 9, 20, 4, C_GRN_D);
+    c.line(22, 16, 22, 76, C_GRN, 2);
+    c.line(27, 18, 27, 76, C_GRN, 1.5);
+    c.star(24, 10, 5.5, 2.5, 5, C_PINK); // desert cactus flower!
+    c.circle(24, 10, 2, C_YEL);
+  });
+  p.add('bg_mesa_canyon', 96, 96, 48, 96, (c) => {
+    // Floor 2 Western — Layered terraced red-rock desert mesa butte!
+    c.poly([[4, 96], [16, 46], [30, 46], [36, 18], [64, 18], [72, 42], [86, 42], [94, 96]], C_TERRA_D);
+    c.poly([[10, 96], [20, 50], [34, 50], [39, 22], [62, 22], [69, 46], [82, 46], [88, 96]], C_TERRA);
+    c.rect(36, 18, 28, 6, C_TERRA_L);
+    c.rect(18, 46, 16, 5, C_TERRA_L);
+    c.rect(18, 64, 64, 5, C_TERRA_D);
+    c.rect(12, 78, 74, 6, C_BRN_D);
+  });
+  p.add('bg_saloon_front', 96, 112, 48, 112, (c) => {
+    // Floor 2 Western — Classic timber saloon false-front with glowing windows & batwing doors!
+    c.rect(10, 32, 76, 80, C_BRN_D);
+    c.rect(14, 36, 68, 76, C_BRN);
+    // False-front stepped parapet & golden sign board
+    c.roundRect(14, 10, 68, 26, 4, C_BRN_D);
+    c.rect(20, 15, 56, 14, C_TAN);
+    c.line(26, 22, 70, 22, C_RED_D, 3);
+    // Glowing saloon windows + porch roof
+    c.rect(20, 46, 18, 22, C_GOLD);
+    c.rect(58, 46, 18, 22, C_GOLD);
+    c.line(29, 46, 29, 68, INK, 2);
+    c.line(67, 46, 67, 68, INK, 2);
+    c.rect(6, 70, 84, 7, C_BRN_L);
+    // Swinging batwing doors
+    c.rect(37, 82, 22, 30, INK);
+    c.roundRect(38, 86, 9, 18, 2, C_BRN_L);
+    c.roundRect(49, 86, 9, 18, 2, C_BRN_L);
+  });
+  p.add('bg_gravestone', 64, 80, 32, 80, (c) => {
+    // Floor 2 Graveyard — Crooked mossy tombstones & iron fence spikes!
+    for (let fx = 4; fx < 62; fx += 10) {
+      c.rect(fx, 44, 3, 36, INK);
+      c.tri(fx - 1, 44, fx + 4, 44, fx + 1.5, 38, INK);
+    }
+    c.rect(2, 54, 60, 3, INK);
+    c.roundRect(16, 20, 30, 58, 13, C_STONE_D);
+    c.roundRect(19, 23, 24, 52, 11, C_STONE);
+    c.rect(29, 30, 4, 16, INK);
+    c.rect(24, 34, 14, 4, INK);
+    c.ellipse(22, 24, 7, 3, C_GRN_D);
+  });
+  p.add('bg_palm_pier', 88, 120, 44, 120, (c) => {
+    // Floor 3 Resort — Tropical curving palm tree perched by wooden pier pilings!
+    // Boardwalk pier posts & deck
+    c.rect(4, 96, 80, 9, C_BRN_L);
+    c.rect(10, 105, 8, 15, C_BRN_D);
+    c.rect(70, 105, 8, 15, C_BRN_D);
+    // Curved segmented palm trunk
+    c.line(42, 98, 34, 66, C_BRN, 10);
+    c.line(34, 66, 44, 34, C_BRN_L, 8);
+    // Coconuts
+    c.circle(40, 36, 4, C_BRN_D);
+    c.circle(48, 37, 4, C_BRN_D);
+    // Sweeping lush tropical fronds!
+    c.poly([[44, 30], [10, 18], [18, 34], [44, 34]], C_GRN);
+    c.poly([[44, 30], [16, 40], [26, 49], [44, 35]], C_GRN_D);
+    c.poly([[44, 30], [78, 16], [70, 32], [44, 34]], C_GRN);
+    c.poly([[44, 30], [76, 42], [64, 50], [44, 35]], C_GRN_D);
+    c.poly([[44, 29], [36, 6], [54, 8], [46, 30]], C_LIME);
+  });
+  p.add('bg_space_dome', 96, 104, 48, 104, (c) => {
+    // Floor 3 Space — Starry cosmic observatory dome with glowing ringed planet!
+    // Twinkling starfield dots
+    c.star(14, 18, 5, 2, 4, C_YEL);
+    c.star(82, 14, 4, 1.5, 4, C_CYAN);
+    c.px(26, 10, EYE_W);
+    c.px(70, 26, EYE_W);
+    // Translucent glass observatory dome
+    c.ellipse(48, 72, 38, 36, hexToRgba('#2d2566'));
+    c.ellipse(48, 72, 34, 32, hexToRgba('#42388c'));
+    c.arc(48, 72, 34, 32, Math.PI, Math.PI * 2, C_CYAN, 2.5);
+    // Ringed cartoon planet inside starry dome!
+    c.circle(48, 60, 12, C_MAG);
+    c.ellipse(48, 60, 24, 5, C_GOLD);
+    c.circle(48, 57, 10, C_PURP);
+    // Metallic observatory base rim
+    c.roundRect(6, 74, 84, 30, 4, C_STEEL_D);
+    c.rect(10, 78, 76, 6, C_STEEL);
+    c.rect(18, 88, 12, 8, C_CYAN);
+    c.rect(42, 88, 12, 8, C_GOLD);
+    c.rect(66, 88, 12, 8, C_CYAN);
+  });
+  p.add('bg_subway_arch', 88, 112, 44, 112, (c) => {
+    // Floor 4 Neon Slum — Wet-brick subway tunnel arch with glowing neon bar sign!
+    c.rect(4, 8, 80, 104, C_SLUM_D);
+    c.rect(4, 8, 80, 10, C_SLUM_L);
+    c.clearEllipse(44, 62, 26, 36);
+    c.rect(18, 62, 52, 50, CLEAR);
+    // Actually clear tunnel opening pixels cleanly
+    for (let y = 62; y < 112; y++) {
+      for (let x = 18; x < 70; x++) c.clearPx(x, y);
+    }
+    // Glowing neon marquee bar across top arch!
+    c.roundRect(18, 12, 52, 12, 4, C_MAG);
+    c.rect(22, 15, 44, 6, C_CYAN);
+    // Wet reflection rivets on brick piers
+    c.rect(8, 32, 6, 68, C_SLUM);
+    c.rect(74, 32, 6, 68, C_SLUM);
+  });
+  p.add('bg_sewer_pipes', 80, 112, 40, 112, (c) => {
+    // Floor 4 Drain — Tangled industrial sewer pipes with dripping lime slime & red valve wheel!
+    c.rect(12, 0, 18, 112, hexToRgba('#2e594c'));
+    c.rect(15, 0, 5, 112, hexToRgba('#57997f'));
+    c.rect(50, 24, 16, 88, C_STEEL_D);
+    c.rect(53, 24, 5, 88, C_STEEL);
+    // Horizontal cross-pipe & bolted flanges
+    c.rect(0, 44, 80, 16, hexToRgba('#3d6e5e'));
+    c.rect(0, 47, 80, 4, hexToRgba('#6eb595'));
+    c.rect(8, 40, 6, 24, C_STEEL_D);
+    c.rect(64, 40, 6, 24, C_STEEL_D);
+    // Red valve wheel!
+    c.ring(40, 52, 11, 11, 3, C_RED);
+    c.line(31, 52, 49, 52, C_RED, 2.5);
+    c.line(40, 43, 40, 61, C_RED, 2.5);
+    // Glowing toxic lime drips!
+    c.ellipse(26, 67, 3.5, 8, C_LIME);
+    c.circle(26, 79, 3, C_LIME);
   });
   p.add('bg_gear', 64, 64, 32, 32, (c) => {
-    c.star(32, 32, 29, 21, 8, C_STEEL_D);
-    c.circle(32, 32, 16, C_STEEL);
-    c.circle(32, 32, 8, hexToRgba('#252230'));
+    c.star(32, 32, 30, 21, 10, C_STEEL_D);
+    c.circle(32, 32, 20, C_STEEL);
+    c.circle(32, 32, 15, C_STEEL_D);
+    c.clearEllipse(32, 32, 8, 8);
+    c.ring(32, 32, 10, 10, 2.2, C_GOLD);
+    c.circle(32, 17, 2.2, C_STEEL_L);
+    c.circle(32, 47, 2.2, C_STEEL_L);
+    c.circle(17, 32, 2.2, C_STEEL_L);
+    c.circle(47, 32, 2.2, C_STEEL_L);
+  });
+  p.add('bg_ice_crystal', 64, 104, 32, 104, (c) => {
+    // Floor 4 Freezer — Faceted gleaming glacial ice crystal spire cluster!
+    c.poly([[32, 4], [48, 36], [42, 104], [22, 104], [16, 36]], C_ICE_D);
+    c.poly([[32, 4], [40, 36], [34, 104], [22, 104], [18, 36]], C_ICE);
+    c.poly([[32, 6], [36, 36], [30, 74], [24, 36]], EYE_W);
+    c.poly([[12, 36], [24, 64], [22, 104], [4, 104], [4, 60]], C_ICE);
+    c.poly([[52, 42], [60, 66], [58, 104], [40, 104], [42, 64]], C_ICE_D);
+    c.star(32, 22, 6, 2, 4, EYE_W);
+  });
+  p.add('bg_chandelier', 80, 96, 40, 20, (c) => {
+    // Floor 5 Manor — Haunted gothic wrought-iron chandelier with flickering candles!
+    c.line(40, 0, 40, 42, INK, 4); // hanging chain
+    c.arc(40, 48, 28, 16, 0, Math.PI, C_STEEL_D, 4);
+    c.arc(40, 44, 16, 10, 0, Math.PI, C_GOLD_D, 3);
+    // 5 eerie candles + glowing flames
+    const xs = [12, 26, 40, 54, 68];
+    for (const cx0 of xs) {
+      c.rect(cx0 - 3, 30, 6, 16, C_CREAM);
+      c.tri(cx0 - 3, 29, cx0 + 3, 29, cx0, 18, C_ORG);
+      c.tri(cx0 - 1.5, 29, cx0 + 1.5, 29, cx0, 22, C_YEL);
+    }
+    // Creepy hanging cobweb threads
+    c.line(12, 46, 26, 62, [220, 220, 240, 130], 1.2);
+    c.line(68, 46, 54, 62, [220, 220, 240, 130], 1.2);
+  });
+  p.add('bg_arcade_cabinet', 72, 112, 36, 112, (c) => {
+    // Floor 5 Arcade — Glowing retro synthwave arcade cabinet with lit CRT screen!
+    c.poly([[10, 112], [10, 52], [18, 10], [54, 10], [62, 52], [62, 112]], hexToRgba('#231645'));
+    c.roundRect(14, 12, 44, 14, 3, C_MAG); // glowing top marquee
+    c.rect(18, 15, 36, 8, C_YEL);
+    // Glowing cyan CRT arcade monitor!
+    c.roundRect(16, 30, 40, 28, 5, C_CYAN);
+    c.rect(20, 34, 32, 20, hexToRgba('#152247'));
+    c.star(36, 44, 7, 3, 5, C_LIME);
+    // Control deck with joystick & neon buttons
+    c.rect(10, 62, 52, 8, C_PURP);
+    c.line(22, 62, 22, 54, C_STEEL_L, 2.5);
+    c.circle(22, 53, 3.5, C_RED);
+    c.circle(42, 65, 2.5, C_YEL);
+    c.circle(50, 65, 2.5, C_CYAN);
+    // Coin door
+    c.rect(24, 78, 24, 24, P2);
+    c.rect(28, 84, 6, 8, C_ORG);
+    c.rect(38, 84, 6, 8, C_ORG);
+  });
+  p.add('bg_war_trench', 96, 96, 48, 96, (c) => {
+    // Floor 5 Blitz — War trench watchtower, sandbag parapet & angled searchlight beam!
+    // Dramatic searchlight beam sweeping upward
+    c.poly([[54, 42], [14, 0], [44, 0], [60, 42]], [255, 245, 170, 95]);
+    // Wooden/steel watchtower frame
+    c.line(54, 42, 44, 96, hexToRgba('#38402b'), 5);
+    c.line(74, 42, 84, 96, hexToRgba('#38402b'), 5);
+    c.roundRect(48, 28, 32, 18, 3, hexToRgba('#495439'));
+    c.circle(54, 40, 4, C_YEL);
+    // Stacked sandbags along bottom trench parapet
+    for (let sx = 6; sx < 86; sx += 18) {
+      c.roundRect(sx, 78, 17, 10, 4, C_TAN_D);
+      c.roundRect(sx + 6, 86, 17, 10, 4, C_TAN);
+    }
+    // Barbed wire line across trench top
+    c.line(2, 74, 94, 74, INK, 1.5);
+    for (let wx = 10; wx < 90; wx += 14) {
+      c.line(wx - 3, 71, wx + 3, 77, INK, 1.4);
+      c.line(wx + 3, 71, wx - 3, 77, INK, 1.4);
+    }
+  });
+  p.add('bg_spire_cracks', 80, 128, 40, 128, (c) => {
+    // Floor 5 Crumbling Spire — Shattering tower column splitting with glowing golden/molten fractures!
+    c.poly([[16, 0], [64, 0], [60, 52], [68, 128], [12, 128], [20, 56]], hexToRgba('#3b1525'));
+    c.rect(12, 0, 56, 10, hexToRgba('#692438'));
+    // Dramatic glowing molten spire cracks splitting the masonry!
+    c.line(38, 6, 26, 38, C_ORG, 5);
+    c.line(26, 38, 52, 72, C_ORG, 5);
+    c.line(52, 72, 34, 124, C_ORG, 5);
+    c.line(38, 6, 26, 38, C_GOLD, 2.5);
+    c.line(26, 38, 52, 72, C_YEL, 2.5);
+    c.line(52, 72, 34, 124, C_YEL, 2.5);
+    c.line(26, 38, 16, 46, C_YEL, 2);
+    c.line(52, 72, 64, 62, C_YEL, 2);
+    // Floating broken rubble chunks detaching off the spire!
+    c.roundRect(2, 34, 10, 10, 2, hexToRgba('#5e2236'));
+    c.roundRect(68, 48, 10, 12, 2, hexToRgba('#5e2236'));
   });
   p.add('bg_window_glow', 40, 64, 20, 32, (c) => {
     c.roundRect(4, 4, 32, 56, 14, C_GOLD);
+    c.roundRect(8, 8, 24, 48, 11, C_YEL);
     c.line(20, 4, 20, 60, INK, 3);
     c.line(4, 32, 36, 32, INK, 3);
+    c.inkOutline(INK, 1);
   });
 
   // ---- 14. Outlined Bitmap Font Glyphs (5x7 scaled 2x + ink outline = 12x16) ----
