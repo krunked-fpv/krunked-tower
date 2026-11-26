@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#140c1c" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Krunked Tower</title>
+  </head>
+  <body>
+    <div id="app" class="kt-app">
+      <div id="stage-viewport" class="kt-viewport">
+        <canvas id="game-canvas" class="kt-canvas" width="960" height="540" aria-label="Krunked Tower Canvas"></canvas>
+      </div>
+      <div id="hud-root" class="kt-layer kt-hud-root" aria-live="polite"></div>
+      <div id="touch-root" class="kt-layer kt-touch-root"></div>
+      <div id="ui-root" class="kt-layer kt-ui-root"></div>
+      <div id="toast-root" class="kt-layer kt-toast-root" aria-live="assertive"></div>
+      <div class="kt-rotate-hint" aria-hidden="true">
+        <span class="kt-rotate-badge">↻ ROTATE TO LANDSCAPE FOR BEST VIEW</span>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
