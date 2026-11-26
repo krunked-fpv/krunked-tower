@@ -17,7 +17,7 @@ import {
   StageId,
   TransformationId,
 } from '../contracts/index';
-import { BOSSES, LEVELS, PALETTES, STAGE_ORDER, STRINGS } from '../data/index';
+import { BOSSES, CHEF_TASKS, LEVELS, PALETTES, PALETTE_MAP, STAGE_ORDER, STRINGS } from '../data/index';
 import { renderActionGlyphHtml } from '../input/InputRouter';
 import { formatKeyCodeLabel } from '../input/KeyboardMouseDriver';
 
@@ -760,10 +760,17 @@ export class Menus {
           <div class="kt-section-label">NEW UNLOCKS!</div>
           <div class="kt-unlocks-list">
             ${unlockedPalettes
-              .map((p) => `<span class="kt-unlock-chip">COSTUME: ${escapeHtml(p.toUpperCase())}</span>`)
+              .map((p) => {
+                const label = PALETTE_MAP[p]?.name ?? p.replace(/_/g, ' ');
+                return `<span class="kt-unlock-chip">COSTUME: ${escapeHtml(label.toUpperCase())}</span>`;
+              })
               .join('')}
             ${unlockedTasks
-              .map((t) => `<span class="kt-unlock-chip">TASK: ${escapeHtml(t.toUpperCase())}</span>`)
+              .map((t) => {
+                const taskObj = CHEF_TASKS.find((item) => item.id === t);
+                const label = taskObj?.name ?? t.replace(/^task_/, '').replace(/_/g, ' ');
+                return `<span class="kt-unlock-chip">TASK: ${escapeHtml(label.toUpperCase())}</span>`;
+              })
               .join('')}
           </div>
         `

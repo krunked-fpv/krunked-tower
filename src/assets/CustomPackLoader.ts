@@ -294,10 +294,14 @@ export async function loadPackFromViteMiddleware(): Promise<LoadedCustomPack | n
     if (!ct.includes('json') && !ct.includes('text')) return null;
 
     const manifest = (await resp.json()) as AssetManifest & {
+      available?: boolean;
       atlasImage?: string;
       atlasPages?: string[];
     };
-    if (!manifest || typeof manifest !== 'object' || !manifest.sprites) return null;
+    if (!manifest || typeof manifest !== 'object' || manifest.available === false || !manifest.sprites) return null;
+    if (Object.keys(manifest.sprites).length === 0 && (!manifest.audio || Object.keys(manifest.audio).length === 0)) {
+      return null;
+    }
 
     const audioMap = new Map<string, string>();
     if (manifest.audio && typeof manifest.audio === 'object') {

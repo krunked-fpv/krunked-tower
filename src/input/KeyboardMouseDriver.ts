@@ -80,7 +80,9 @@ export class KeyboardMouseDriver {
 
   private readonly handleKeyDown = (e: KeyboardEvent): void => {
     this.callbacks.onUserGesture?.();
-    this.callbacks.onActivity?.();
+    if (!/^F\d+$/.test(e.code)) {
+      this.callbacks.onActivity?.();
+    }
 
     if (this.captureHandler) {
       e.preventDefault();

@@ -182,6 +182,28 @@ function populateRoomEntities(state: SimState, roomDef: RoomDef): void {
       const key = `pickup:${roomDef.id}:${i}`;
       if (state.collectedIds.includes(key)) continue;
 
+      // Prevent pickups from spawning overlapped inside solid/breakable/pillar geometry
+      const tx = Math.floor(sp.x / ENGINE_CONSTANTS.TILE_SIZE);
+      const ty = Math.floor(sp.y / ENGINE_CONSTANTS.TILE_SIZE);
+      if (
+        tx >= 0 &&
+        ty >= 0 &&
+        tx < state.room.widthTiles &&
+        ty < state.room.heightTiles
+      ) {
+        const occ = state.room.tiles[ty * state.room.widthTiles + tx];
+        if (
+          occ === TileType.SOLID ||
+          occ === TileType.BREAK_MARBLE ||
+          occ === TileType.BREAK_METAL ||
+          occ === TileType.PILLAR_BLOCK_CLOSED ||
+          occ === TileType.PILLAR_BLOCK_OPEN ||
+          occ === TileType.ICE_SOLID
+        ) {
+          continue;
+        }
+      }
+
       let value: number = ENGINE_CONSTANTS.SMALL_TOPPING_PTS;
       let comboRefill: number = ENGINE_CONSTANTS.SMALL_TOPPING_COMBO;
       if (sp.pickupKind === 'big_topping') {

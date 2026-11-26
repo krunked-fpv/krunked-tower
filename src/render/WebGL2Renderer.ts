@@ -1434,12 +1434,14 @@ export class WebGL2Renderer implements RendererAPI {
     b: number,
     a = 1
   ): void {
-    const step = 10 * scale;
-    let x = cx - (text.length * step) * 0.5;
+    const snappedScale = scale >= 0.9 ? Math.round(scale) : 1;
+    const step = 9 * snappedScale;
+    let x = Math.round(cx - (text.length * step) * 0.5);
+    const py = Math.round(y);
     for (let i = 0; i < text.length; i++) {
       const gk = fontGlyphKey(text[i]);
       if (gk) {
-        this.pushSprite(gk, x, y, false, scale, scale, r, g, b, a, false);
+        this.pushSprite(gk, x, py, false, snappedScale, snappedScale, r, g, b, a, false);
       }
       x += step;
     }
@@ -1731,12 +1733,12 @@ export class WebGL2Renderer implements RendererAPI {
           prop.kind === 'hub_bonus_gate' ||
           prop.kind === 'tutorial_sign')
       ) {
-        const cleanLabel = prop.label.slice(0, 16);
-        const bannerW = Math.max(70, cleanLabel.length * 8 + 14);
-        const bannerY = prop.kind === 'tutorial_sign' ? sy - 66 : sy - 108;
-        this.pushColoredRect(sx - bannerW * 0.5, bannerY - 4, bannerW, 18, 0.1, 0.07, 0.14, 0.88);
-        this.pushRectOutline(sx - bannerW * 0.5, bannerY - 4, bannerW, 18, 1.5, 1, 0.84, 0.28, 1);
-        this.pushBitmapText(cleanLabel, sx, bannerY, 0.72, 1, 0.96, 0.75, 1);
+        const cleanLabel = prop.label.slice(0, 24);
+        const bannerW = Math.max(88, cleanLabel.length * 9 + 18);
+        const bannerY = prop.kind === 'tutorial_sign' ? sy - 70 : sy - 112;
+        this.pushColoredRect(sx - bannerW * 0.5, bannerY - 4, bannerW, 20, 0.1, 0.07, 0.14, 0.92);
+        this.pushRectOutline(sx - bannerW * 0.5, bannerY - 4, bannerW, 20, 2, 1, 0.84, 0.28, 1);
+        this.pushBitmapText(cleanLabel, sx, bannerY, 1, 1, 0.96, 0.75, 1);
       }
     }
   }

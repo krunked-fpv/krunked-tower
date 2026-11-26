@@ -21,6 +21,13 @@ function localCustomPackMiddleware(): Plugin {
         const rel = decodeURIComponent(rawUrl).replace(/^\/+/, '');
         const fullPath = path.resolve(assetsRoot, rel);
         if (!fullPath.startsWith(assetsRoot) || !fs.existsSync(fullPath) || fs.statSync(fullPath).isDirectory()) {
+          if (rel === 'manifest.json') {
+            res.statusCode = 200;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.end(JSON.stringify({ available: false, version: 1, source: 'builtin', sprites: {}, audio: {} }));
+            return;
+          }
           res.statusCode = 404;
           res.end('Not Found');
           return;

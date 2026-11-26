@@ -290,7 +290,10 @@ export class HudOverlay {
 
     if (this.stagePillEl) {
       if (state.screen === 'hub') {
-        this.stagePillEl.textContent = `FLOOR ${state.floor} — ${state.room.name}`;
+        const roomName = state.room.name;
+        this.stagePillEl.textContent = /^floor\s+\d+/i.test(roomName)
+          ? roomName
+          : `FLOOR ${state.floor} — ${roomName}`;
       } else if (state.screen === 'boss' && state.bossId) {
         const bDef = BOSSES[state.bossId];
         this.stagePillEl.textContent = bDef ? `BOSS: ${bDef.name}` : 'BOSS ARENA';
