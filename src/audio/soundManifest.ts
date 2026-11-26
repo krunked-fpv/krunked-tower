@@ -30,7 +30,12 @@ export type BassStyle =
   | 'acid_bounce'
   | 'tuba_oompah'
   | 'gallop_rock'
-  | 'spooky_creep';
+  | 'spooky_creep'
+  | 'gothic_organ_bass'
+  | 'ragtime_stride'
+  | 'boom_bap_sub'
+  | 'wah_funk'
+  | 'warped_detuned';
 
 export type LeadStyle =
   | 'none'
@@ -42,7 +47,19 @@ export type LeadStyle =
   | 'synth_bell'
   | 'screech_lead'
   | 'whistle_flute'
-  | 'accordion_bouncy';
+  | 'accordion_bouncy'
+  | 'surf_guitar'
+  | 'theremin_wail'
+  | 'honky_tonk'
+  | 'steel_drum'
+  | 'vocoder_square'
+  | 'saw_riff'
+  | 'glockenspiel'
+  | 'music_box'
+  | 'war_horn'
+  | 'wah_lead'
+  | 'warped_lead'
+  | 'harpsichord';
 
 export type PercussionStyle =
   | 'none'
@@ -54,7 +71,14 @@ export type PercussionStyle =
   | 'industrial_clang'
   | 'swing_brush'
   | 'boss_thrash'
-  | 'minimal_tick';
+  | 'minimal_tick'
+  | 'desert_cowbell'
+  | 'steel_calypso'
+  | 'boom_bap'
+  | 'military_march'
+  | 'chaotic_breaks'
+  | 'opera_metal'
+  | 'ragtime_stomp';
 
 export type ChordStyle =
   | 'none'
@@ -63,7 +87,10 @@ export type ChordStyle =
   | 'organ_swell'
   | 'power_fifth'
   | 'marimba_arp'
-  | 'jazz_comp';
+  | 'jazz_comp'
+  | 'harpsichord_clav'
+  | 'synthwave_arp'
+  | 'rhodes_lounge';
 
 export type SfxPriority = 'low' | 'normal' | 'high';
 
@@ -288,15 +315,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 144,
     rootMidi: 45, // A2
     scale: 'dorian',
-    vibe: 'heroic medieval horn march with slapstick bounce',
+    vibe: 'medieval fanfare brass & funky baroque harpsichord stomp',
     loopBars: 4,
-    swing: 0.06,
-    bassStyle: 'tuba_oompah',
+    swing: 0.07,
+    bassStyle: 'slap_funk',
     leadStyle: 'brass_punch',
     percussionStyle: 'cartoon_march',
-    chordStyle: 'power_fifth',
+    chordStyle: 'harpsichord_clav',
     loop: true,
-    gain: 0.88,
+    gain: 0.89,
   },
   stage_ruins: {
     id: 'stage_ruins',
@@ -304,7 +331,7 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 142,
     rootMidi: 46, // Bb2
     scale: 'phrygian_dominant',
-    vibe: 'exotic desert ruins bounce with snaky accordion',
+    vibe: 'syncopated desert-temple groove with snaky phrygian hooks',
     loopBars: 4,
     swing: 0.08,
     bassStyle: 'slap_funk',
@@ -320,15 +347,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 140,
     rootMidi: 43, // G2
     scale: 'harmonic_minor',
-    vibe: 'mischievous dungeon organ & clattering rimshots',
+    vibe: 'bouncy gothic pipe-organ bassline & mischievous dungeon caper',
     loopBars: 4,
     swing: 0.1,
-    bassStyle: 'spooky_creep',
+    bassStyle: 'gothic_organ_bass',
     leadStyle: 'organ_spooky',
     percussionStyle: 'spooky_rim',
     chordStyle: 'organ_swell',
     loop: true,
-    gain: 0.86,
+    gain: 0.88,
   },
 
   // ---- Floor 2 Stages ----
@@ -338,15 +365,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 152,
     rootMidi: 45, // A2
     scale: 'mixolydian',
-    vibe: 'sun-baked western rock gallop & blazing brass',
+    vibe: 'twangy desert surf guitar gallop with blazing cowbell',
     loopBars: 4,
     swing: 0.06,
     bassStyle: 'gallop_rock',
-    leadStyle: 'twang_banjo',
-    percussionStyle: 'western_gallop',
+    leadStyle: 'surf_guitar',
+    percussionStyle: 'desert_cowbell',
     chordStyle: 'power_fifth',
     loop: true,
-    gain: 0.88,
+    gain: 0.89,
   },
   stage_graveyard: {
     id: 'stage_graveyard',
@@ -354,15 +381,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 136,
     rootMidi: 47, // B2
     scale: 'hungarian_minor',
-    vibe: 'spooky cartoon skeleton swing with rattling clav',
+    vibe: 'spooky wailing theremin over swung skeleton walking bass',
     loopBars: 4,
-    swing: 0.14,
-    bassStyle: 'spooky_creep',
-    leadStyle: 'organ_spooky',
+    swing: 0.16,
+    bassStyle: 'walking_swing',
+    leadStyle: 'theremin_wail',
     percussionStyle: 'spooky_rim',
     chordStyle: 'funk_clav',
     loop: true,
-    gain: 0.86,
+    gain: 0.87,
   },
   stage_farm: {
     id: 'stage_farm',
@@ -370,11 +397,11 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 146,
     rootMidi: 43, // G2
     scale: 'pentatonic_major',
-    vibe: 'rollicking fiddle-whistle barn chase & oompah bass',
+    vibe: 'hoedown banjo-pluck funk & rollicking barnyard stomp',
     loopBars: 4,
     swing: 0.14,
-    bassStyle: 'tuba_oompah',
-    leadStyle: 'whistle_flute',
+    bassStyle: 'slap_funk',
+    leadStyle: 'twang_banjo',
     percussionStyle: 'western_gallop',
     chordStyle: 'brass_stab',
     loop: true,
@@ -385,16 +412,16 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     title: 'High-Noon Honky-Tonk',
     bpm: 150,
     rootMidi: 50, // D3
-    scale: 'blues',
-    vibe: 'raucous western saloon piano-twang & saloon brawl drums',
+    scale: 'mixolydian',
+    vibe: 'frantic ragtime honky-tonk tack-piano saloon sprint',
     loopBars: 4,
-    swing: 0.15,
-    bassStyle: 'walking_swing',
-    leadStyle: 'twang_banjo',
-    percussionStyle: 'western_gallop',
+    swing: 0.14,
+    bassStyle: 'ragtime_stride',
+    leadStyle: 'honky_tonk',
+    percussionStyle: 'ragtime_stomp',
     chordStyle: 'jazz_comp',
     loop: true,
-    gain: 0.88,
+    gain: 0.89,
   },
 
   // ---- Floor 3 Stages ----
@@ -404,12 +431,12 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 146,
     rootMidi: 48, // C3
     scale: 'major',
-    vibe: 'surf-cartoon boardwalk brass & bubbly slap bass',
+    vibe: 'sunny tropical steel-drum calypso & popping boardwalk slap bass',
     loopBars: 4,
     swing: 0.08,
     bassStyle: 'slap_funk',
-    leadStyle: 'brass_punch',
-    percussionStyle: 'funk_break',
+    leadStyle: 'steel_drum',
+    percussionStyle: 'steel_calypso',
     chordStyle: 'marimba_arp',
     loop: true,
     gain: 0.88,
@@ -436,15 +463,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 148,
     rootMidi: 46, // Bb2
     scale: 'lydian',
-    vibe: 'cosmic retro-synth arps, acid bass & laser percussion',
+    vibe: 'retro 80s synthwave arps & cosmic vocoder square lead',
     loopBars: 4,
-    swing: 0.05,
-    bassStyle: 'acid_bounce',
-    leadStyle: 'synth_bell',
+    swing: 0.0,
+    bassStyle: 'octave_pump',
+    leadStyle: 'vocoder_square',
     percussionStyle: 'funk_break',
-    chordStyle: 'funk_clav',
+    chordStyle: 'synthwave_arp',
     loop: true,
-    gain: 0.88,
+    gain: 0.89,
   },
   stage_golf: {
     id: 'stage_golf',
@@ -452,13 +479,13 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 134,
     rootMidi: 41, // F2
     scale: 'major',
-    vibe: 'cheeky elevator-jazz meets hyper-bouncy cartoon sax',
+    vibe: 'chill-yet-funky jazz-lounge fusion with Rhodes chords & smooth sax',
     loopBars: 4,
     swing: 0.16,
-    bassStyle: 'walking_swing',
+    bassStyle: 'slap_funk',
     leadStyle: 'sax_honk',
     percussionStyle: 'swing_brush',
-    chordStyle: 'jazz_comp',
+    chordStyle: 'rhodes_lounge',
     loop: true,
     gain: 0.86,
   },
@@ -467,18 +494,18 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
   stage_metro: {
     id: 'stage_metro',
     title: 'Midnight Metro Express',
-    bpm: 154,
+    bpm: 138,
     rootMidi: 44, // Ab2
     scale: 'dorian',
-    vibe: 'slick big-city jazz-funk horns & driving subway groove',
+    vibe: '90s boom-bap hip-hop brass breakbeat & gritty subway groove',
     loopBars: 4,
-    swing: 0.1,
-    bassStyle: 'slap_funk',
-    leadStyle: 'sax_honk',
-    percussionStyle: 'funk_break',
+    swing: 0.15,
+    bassStyle: 'boom_bap_sub',
+    leadStyle: 'brass_punch',
+    percussionStyle: 'boom_bap',
     chordStyle: 'funk_clav',
     loop: true,
-    gain: 0.88,
+    gain: 0.89,
   },
   stage_drain: {
     id: 'stage_drain',
@@ -486,15 +513,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 140,
     rootMidi: 42, // F#2
     scale: 'blues',
-    vibe: 'squelchy acid-funk sewer bass & cheeky square hooks',
+    vibe: 'squelchy resonant acid-bass sewer funk & bubbling cartoon wahs',
     loopBars: 4,
     swing: 0.12,
     bassStyle: 'acid_bounce',
-    leadStyle: 'square_cartoon',
+    leadStyle: 'wah_lead',
     percussionStyle: 'industrial_clang',
     chordStyle: 'funk_clav',
     loop: true,
-    gain: 0.86,
+    gain: 0.88,
   },
   stage_foundry: {
     id: 'stage_foundry',
@@ -502,15 +529,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 156,
     rootMidi: 40, // E2
     scale: 'phrygian',
-    vibe: 'heavy industrial anvil beats & blistering brass blasts',
+    vibe: 'industrial anvil percussion & driving saturated sawtooth riff',
     loopBars: 4,
     swing: 0.0,
     bassStyle: 'sub_stomp',
-    leadStyle: 'brass_punch',
+    leadStyle: 'saw_riff',
     percussionStyle: 'industrial_clang',
     chordStyle: 'power_fifth',
     loop: true,
-    gain: 0.9,
+    gain: 0.91,
   },
   stage_freezer: {
     id: 'stage_freezer',
@@ -518,49 +545,49 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 144,
     rootMidi: 51, // Eb3
     scale: 'minor',
-    vibe: 'crystalline synth bells over crisp turbo beat',
+    vibe: 'crystalline icy glockenspiel over brisk chiptune pulse arps',
     loopBars: 4,
     swing: 0.04,
     bassStyle: 'octave_pump',
-    leadStyle: 'synth_bell',
+    leadStyle: 'glockenspiel',
     percussionStyle: 'funk_break',
     chordStyle: 'marimba_arp',
     loop: true,
-    gain: 0.86,
+    gain: 0.88,
   },
 
   // ---- Floor 5 Stages ----
   stage_manor: {
     id: 'stage_manor',
     title: 'Velvet Manor Waltz-Dash',
-    bpm: 146,
+    bpm: 148,
     rootMidi: 45, // A2
     scale: 'harmonic_minor',
-    vibe: 'haunted gothic-cartoon pipe organ & rapid harpsichord clav',
+    vibe: 'haunted baroque rock with virtuosic pipe organ & harpsichord',
     loopBars: 4,
-    swing: 0.06,
-    bassStyle: 'spooky_creep',
+    swing: 0.04,
+    bassStyle: 'gothic_organ_bass',
     leadStyle: 'organ_spooky',
-    percussionStyle: 'spooky_rim',
-    chordStyle: 'organ_swell',
+    percussionStyle: 'boss_thrash',
+    chordStyle: 'harpsichord_clav',
     loop: true,
-    gain: 0.88,
+    gain: 0.9,
   },
   stage_arcade: {
     id: 'stage_arcade',
     title: 'Glitchy Kid-Zone Mania',
-    bpm: 158,
+    bpm: 156,
     rootMidi: 48, // C3
-    scale: 'whole_tone',
-    vibe: 'unhinged toy-arcade chiptune & jittery cartoon mayhem',
+    scale: 'harmonic_minor',
+    vibe: 'eerie wind-up music-box lullaby erupting into punchy arcade synth shift',
     loopBars: 4,
-    swing: 0.08,
+    swing: 0.04,
     bassStyle: 'acid_bounce',
-    leadStyle: 'square_cartoon',
+    leadStyle: 'music_box',
     percussionStyle: 'cartoon_march',
     chordStyle: 'marimba_arp',
     loop: true,
-    gain: 0.88,
+    gain: 0.9,
   },
   stage_blitz: {
     id: 'stage_blitz',
@@ -568,15 +595,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 168,
     rootMidi: 40, // E2
     scale: 'phrygian',
-    vibe: 'relentless high-octane military speedrun march',
+    vibe: 'relentless military snare march & adrenaline war-horn synth assault',
     loopBars: 4,
     swing: 0.0,
     bassStyle: 'gallop_rock',
-    leadStyle: 'screech_lead',
-    percussionStyle: 'boss_thrash',
+    leadStyle: 'war_horn',
+    percussionStyle: 'military_march',
     chordStyle: 'power_fifth',
     loop: true,
-    gain: 0.92,
+    gain: 0.93,
   },
 
   // ---- Secrets, Escapes & Bonus ----
@@ -634,10 +661,10 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 182,
     rootMidi: 45, // A2
     scale: 'minor',
-    vibe: 'heroic climactic tower collapse anthem',
-    loopBars: 4,
+    vibe: 'heroic bittersweet high-tempo tower-collapse finale anthem',
+    loopBars: 8,
     swing: 0.0,
-    bassStyle: 'gallop_rock',
+    bassStyle: 'octave_pump',
     leadStyle: 'brass_punch',
     percussionStyle: 'boss_thrash',
     chordStyle: 'brass_stab',
@@ -647,18 +674,18 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
   candy_panic: {
     id: 'candy_panic',
     title: 'Sugar Rush Pandemonium',
-    bpm: 164,
+    bpm: 166,
     rootMidi: 50, // D3
     scale: 'hungarian_minor',
-    vibe: 'frantic spooky-candy carnival dash',
+    vibe: 'spooky high-speed Halloween candy-arcade carnival rush',
     loopBars: 4,
-    swing: 0.08,
+    swing: 0.06,
     bassStyle: 'tuba_oompah',
-    leadStyle: 'accordion_bouncy',
+    leadStyle: 'square_cartoon',
     percussionStyle: 'cartoon_march',
     chordStyle: 'marimba_arp',
     loop: true,
-    gain: 0.9,
+    gain: 0.91,
   },
 
   // ---- Bosses ----
@@ -684,15 +711,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 160,
     rootMidi: 45, // A2
     scale: 'phrygian_dominant',
-    vibe: 'intense frontier-western quickdraw showdown',
-    loopBars: 4,
+    vibe: 'dramatic spaghetti-western brass & whistling frontier showdown',
+    loopBars: 8,
     swing: 0.04,
     bassStyle: 'gallop_rock',
-    leadStyle: 'twang_banjo',
-    percussionStyle: 'western_gallop',
-    chordStyle: 'power_fifth',
+    leadStyle: 'whistle_flute',
+    percussionStyle: 'desert_cowbell',
+    chordStyle: 'brass_stab',
     loop: true,
-    gain: 0.92,
+    gain: 0.93,
   },
   boss_static: {
     id: 'boss_static',
@@ -700,13 +727,13 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 172,
     rootMidi: 48, // C3
     scale: 'mixolydian',
-    vibe: 'hyperactive cartoon-ska chaos & zany square-wave mischief',
+    vibe: 'hyperactive slapstick wah-funk & chaotic cartoon breakbeats',
     loopBars: 4,
-    swing: 0.08,
-    bassStyle: 'slap_funk',
-    leadStyle: 'square_cartoon',
-    percussionStyle: 'hyper_dnb',
-    chordStyle: 'brass_stab',
+    swing: 0.09,
+    bassStyle: 'wah_funk',
+    leadStyle: 'wah_lead',
+    percussionStyle: 'chaotic_breaks',
+    chordStyle: 'funk_clav',
     loop: true,
     gain: 0.93,
   },
@@ -716,15 +743,15 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 162,
     rootMidi: 49, // C#3
     scale: 'phrygian',
-    vibe: 'warped eerie high-speed reflection of the Crypt theme',
+    vibe: 'eerie warped detuned mirror-tempo bass groove reflecting the Crypt',
     loopBars: 4,
     swing: 0.0,
-    bassStyle: 'acid_bounce',
-    leadStyle: 'organ_spooky',
+    bassStyle: 'warped_detuned',
+    leadStyle: 'warped_lead',
     percussionStyle: 'industrial_clang',
     chordStyle: 'organ_swell',
     loop: true,
-    gain: 0.92,
+    gain: 0.93,
   },
   boss_megacrust: {
     id: 'boss_megacrust',
@@ -732,12 +759,12 @@ export const MUSIC_MANIFEST: Record<MusicTrackId, MusicTrackMeta> = {
     bpm: 178,
     rootMidi: 40, // E2
     scale: 'harmonic_minor',
-    vibe: 'all-out 3-phase final boss theatrical cartoon metal-funk',
-    loopBars: 4,
+    vibe: 'unforgettable multi-section opera-rock & circus-metal grand finale',
+    loopBars: 8,
     swing: 0.0,
     bassStyle: 'octave_pump',
     leadStyle: 'screech_lead',
-    percussionStyle: 'boss_thrash',
+    percussionStyle: 'opera_metal',
     chordStyle: 'power_fifth',
     loop: true,
     gain: 0.95,

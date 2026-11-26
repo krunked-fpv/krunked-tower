@@ -29,7 +29,7 @@ export interface SfxPlayOptions {
   volume?: number;
 }
 
-interface NoteEvent {
+export interface NoteEvent {
   /** Scale degree relative to track root (can be negative or > scale length) */
   deg: number;
   /** Duration in 16th-note steps */
@@ -38,24 +38,34 @@ interface NoteEvent {
   vel?: number;
   /** Optional chromatic semitone offset (e.g. +1 or -1 for funky passing tones) */
   semi?: number;
+  /** Optional per-note lead voice override (for multi-section tracks & shifts) */
+  leadStyle?: LeadStyle;
+  /** Optional per-note bass voice override (for multi-section tracks & shifts) */
+  bassStyle?: BassStyle;
 }
 
-interface ChordEvent {
-  /** Base scale degree for the triad */
+export interface ChordEvent {
+  /** Base scale degree for the triad/voicing */
   deg: number;
   /** Duration in 16th-note steps */
   len: number;
   /** Velocity 0..1 */
   vel?: number;
+  /** Optional per-chord voice override */
+  chordStyle?: ChordStyle;
+  /** Optional custom scale-degree intervals (e.g. [0, 2, 4, 6] for 7th lounge chords) */
+  intervals?: readonly number[];
 }
 
 type DrumHit = 'K' | 'S' | 'H' | 'O' | 'C' | 'T' | 'B' | 'R' | 'A';
 
-interface TrackArrangement {
-  /** Total 16th-note steps in the arrangement loop (typically 64 = 4 bars) */
+export interface TrackArrangement {
+  /** Total 16th-note steps in the arrangement loop (typically 64 = 4 bars, or 128 = 8 bars) */
   steps: number;
   bass: ReadonlyArray<NoteEvent | null>;
   lead: ReadonlyArray<NoteEvent | null>;
+  /** Optional secondary counter-melody, arpeggio, whistle, or brass-stab layer */
+  counter?: ReadonlyArray<NoteEvent | null>;
   chords: ReadonlyArray<ChordEvent | null>;
   drums: ReadonlyArray<string>; // e.g. 'KH' = kick + closed hat on that 16th step
 }
@@ -73,37 +83,75 @@ const PRIORITY_RANK: Record<SfxPriority, number> = {
   high: 2,
 };
 
+type NoteEntry = readonly [
+  step: number,
+  deg: number,
+  len?: number,
+  vel?: number,
+  semi?: number,
+  leadStyle?: LeadStyle,
+  bassStyle?: BassStyle,
+];
+
+type ChordEntry = readonly [
+  step: number,
+  deg: number,
+  len?: number,
+  vel?: number,
+  chordStyle?: ChordStyle,
+  intervals?: readonly number[],
+];
+
 /** Compact pattern builder turning sparse step-index maps into dense arrays. */
 function makeNoteTrack(
   steps: number,
-  entries: ReadonlyArray<[number, number, number?, number?, number?]>,
+  entries: ReadonlyArray<NoteEntry>,
 ): Array<NoteEvent | null> {
   const arr: Array<NoteEvent | null> = new Array(steps).fill(null);
-  for (const [step, deg, len = 1, vel = 0.85, semi = 0] of entries) {
+  for (const [step, deg, len = 1, vel = 0.85, semi = 0, leadStyle, bassStyle] of entries) {
     const idx = ((step % steps) + steps) % steps;
-    arr[idx] = { deg, len, vel, semi };
+    const ev: NoteEvent = { deg, len, vel, semi };
+    if (leadStyle !== undefined) ev.leadStyle = leadStyle;
+    if (bassStyle !== undefined) ev.bassStyle = bassStyle;
+    arr[idx] = ev;
   }
   return arr;
 }
 
 function makeChordTrack(
   steps: number,
-  entries: ReadonlyArray<[number, number, number?, number?]>,
+  entries: ReadonlyArray<ChordEntry>,
 ): Array<ChordEvent | null> {
   const arr: Array<ChordEvent | null> = new Array(steps).fill(null);
-  for (const [step, deg, len = 2, vel = 0.7] of entries) {
+  for (const [step, deg, len = 2, vel = 0.7, chordStyle, intervals] of entries) {
     const idx = ((step % steps) + steps) % steps;
-    arr[idx] = { deg, len, vel };
+    const ev: ChordEvent = { deg, len, vel };
+    if (chordStyle !== undefined) ev.chordStyle = chordStyle;
+    if (intervals !== undefined) ev.intervals = intervals;
+    arr[idx] = ev;
   }
   return arr;
 }
 
+function makeCustomDrumPattern(
+  steps: number,
+  builder: (step: number, bar: number, sub: number, totalBars: number) => string,
+): string[] {
+  const out: string[] = new Array(steps).fill('');
+  const totalBars = Math.max(1, Math.floor(steps / 16));
+  for (let i = 0; i < steps; i++) {
+    out[i] = builder(i, Math.floor(i / 16), i % 16, totalBars);
+  }
+  return out;
+}
+
 function makeDrumPattern(style: PercussionStyle, steps: number): string[] {
   const out: string[] = new Array(steps).fill('');
+  const totalBars = Math.max(1, Math.floor(steps / 16));
   for (let i = 0; i < steps; i++) {
     const bar = Math.floor(i / 16);
     const s = i % 16;
-    const isLastBar = bar === Math.floor(steps / 16) - 1;
+    const isLastBar = bar === totalBars - 1;
     let hits = '';
 
     switch (style) {
@@ -168,6 +216,58 @@ function makeDrumPattern(style: PercussionStyle, steps: number): string[] {
         if (s === 4 || s === 12) hits += 'H';
         if (bar % 2 === 1 && s === 14) hits += 'B';
         break;
+      case 'desert_cowbell':
+        if (s === 0 || s === 3 || s === 8 || s === 11 || (bar % 2 === 1 && s === 14)) hits += 'K';
+        if (s === 4 || s === 12) hits += 'S';
+        if (s === 0 || s === 2 || s === 6 || s === 8 || s === 10 || s === 14) hits += 'B';
+        if (s === 7 || s === 15) hits += 'H';
+        if (isLastBar && s >= 12) hits += s % 2 === 0 ? 'T' : 'TS';
+        break;
+      case 'steel_calypso':
+        if (s === 0 || s === 6 || s === 8 || s === 14) hits += 'K';
+        if (s === 4 || s === 12) hits += 'C';
+        if (s === 0 || s === 3 || s === 6 || s === 10 || s === 12) hits += 'R';
+        if (s === 2 || s === 10) hits += 'B';
+        if (s % 2 === 0) hits += s === 14 ? 'O' : 'H';
+        if (isLastBar && (s === 13 || s === 14 || s === 15)) hits += 'T';
+        break;
+      case 'boom_bap':
+        if (s === 0 || s === 7 || s === 10 || (bar % 2 === 1 && s === 15)) hits += 'K';
+        if (s === 4 || s === 12) hits += 'SC';
+        if (s % 2 === 0) hits += s === 14 ? 'O' : 'H';
+        if (s === 9) hits += 'R';
+        if (isLastBar && (s === 13 || s === 15)) hits += 'ST';
+        break;
+      case 'military_march':
+        if (s === 0 || s === 4 || s === 8 || s === 12 || (bar % 2 === 1 && s === 10)) hits += 'K';
+        if (s === 0 || s === 2 || s === 3 || s === 4 || s === 6 || s === 8 || s === 10 || s === 11 || s === 12 || s === 14 || s === 15) {
+          hits += 'S';
+        }
+        if (s === 1 || s === 9) hits += 'R';
+        if (isLastBar && s >= 11) hits += 'ST';
+        break;
+      case 'chaotic_breaks':
+        if (s === 0 || s === 3 || s === 6 || s === 10 || (bar % 2 === 1 && s === 13)) hits += 'K';
+        if (s === 4 || s === 12 || (bar % 2 === 0 && s === 7) || (bar % 2 === 1 && s === 14)) hits += 'S';
+        if (s === 4 || s === 11) hits += 'C';
+        if (s === 2 || s === 9) hits += 'B';
+        if (s % 2 === 0) hits += s === 6 || s === 14 ? 'O' : 'H';
+        if ((bar === 1 || isLastBar) && s >= 13) hits += 'T';
+        break;
+      case 'opera_metal':
+        if (s % 2 === 0) hits += 'K';
+        if (s === 4 || s === 12) hits += 'SC';
+        if (s === 0 || s === 8) hits += 'A';
+        hits += s % 4 === 2 ? 'O' : 'H';
+        if (bar % 2 === 1 && s >= 12) hits += 'ST';
+        break;
+      case 'ragtime_stomp':
+        if (s === 0 || s === 8 || (bar % 2 === 1 && s === 14)) hits += 'K';
+        if (s === 4 || s === 12) hits += 'SCR';
+        if (s % 2 === 0 || s === 15) hits += 'H';
+        if (bar % 2 === 1 && s === 14) hits += 'B';
+        if (isLastBar && (s === 13 || s === 14 || s === 15)) hits += 'RT';
+        break;
     }
     out[i] = hits;
   }
@@ -175,10 +275,12 @@ function makeDrumPattern(style: PercussionStyle, steps: number): string[] {
 }
 
 // ============================================================================
-// Hand-Crafted Flagship Wave 1 Musical Arrangements (64 steps = 4 bars)
+// Complete Hand-Crafted Bespoke Arrangements for ALL 38 Playable Tracks
+// Zero generic fallbacks — every Floor, Stage, Hub, Escape & Boss has its own
+// unmistakable 90s cartoon musical identity!
 // ============================================================================
 
-const FLAGSHIP_ARRANGEMENTS: Partial<Record<MusicTrackId, TrackArrangement>> = {
+const TRACK_ARRANGEMENTS: Record<Exclude<MusicTrackId, 'none'>, TrackArrangement> = {
   // 1. TITLE — "Krunked Tower Overture" (C Mixolydian, 138 BPM)
   title: {
     steps: 64,
@@ -577,161 +679,1282 @@ const FLAGSHIP_ARRANGEMENTS: Partial<Record<MusicTrackId, TrackArrangement>> = {
     ]),
     drums: makeDrumPattern('swing_brush', 64),
   },
+
+  // ==========================================================================
+  // Wave 2 Bespoke Arrangements — Floor 1 Remaining (Keep, Ruins, Catacombs)
+  // ==========================================================================
+
+  // 16. STAGE KEEP — "Keep of the Crust" (A Dorian, 144 BPM)
+  // Medieval fanfare brass + harpsichord funk!
+  stage_keep: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      [0, 0, 2, 0.96], [3, 0, 1, 0.82], [4, 7, 2, 0.92], [6, 4, 2, 0.9],
+      [8, 0, 2, 0.95], [10, 2, 2, 0.88], [12, 3, 2, 0.92], [14, 4, 2, 0.9],
+      [16, 6, 2, 0.95], [19, 6, 1, 0.82], [20, 4, 2, 0.9], [22, 6, 2, 0.88],
+      [24, 3, 2, 0.94], [26, 4, 2, 0.9], [28, 5, 2, 0.92], [30, 4, 2, 0.88],
+      [32, 3, 2, 0.96], [35, 3, 1, 0.82], [36, 7, 2, 0.92], [38, 6, 2, 0.9],
+      [40, 4, 2, 0.95], [43, 4, 1, 0.82], [44, 6, 2, 0.92], [46, 7, 2, 0.92],
+      [48, 0, 2, 0.98], [50, 7, 2, 0.92], [52, 6, 2, 0.92], [54, 4, 2, 0.9],
+      [56, 3, 2, 0.95], [58, 4, 2, 0.96], [60, 0, 2, 1.0], [62, 6, 2, 0.94],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Bar 0: Royal medieval trumpet fanfare call
+      [0, 7, 1, 0.98], [1, 7, 1, 0.9], [2, 11, 2, 0.98], [4, 14, 3, 1.0],
+      [8, 13, 2, 0.94], [10, 11, 2, 0.92], [12, 9, 2, 0.94], [14, 11, 2, 0.94],
+      // Bar 1: Heraldic Dorian response
+      [16, 13, 2, 0.96], [18, 11, 2, 0.92], [20, 10, 3, 0.96],
+      [24, 11, 2, 0.94], [26, 9, 2, 0.9], [28, 7, 3, 0.96],
+      // Bar 2: Lifting knightly horn phrase
+      [32, 10, 1, 0.96], [33, 10, 1, 0.9], [34, 12, 2, 0.96], [36, 14, 3, 1.0],
+      [40, 15, 2, 0.98], [42, 14, 2, 0.96], [44, 13, 2, 0.95], [46, 11, 2, 0.94],
+      // Bar 3: Triumphant castle turnaround
+      [48, 14, 2, 1.0], [50, 16, 2, 1.0], [52, 18, 3, 1.0],
+      [56, 16, 2, 0.96], [58, 14, 2, 0.96], [60, 11, 2, 0.98], [62, 14, 2, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Sparkling baroque harpsichord funk arps filling the brass gaps!
+      [6, 11, 1, 0.78, 0, 'harpsichord'], [7, 14, 1, 0.82, 0, 'harpsichord'],
+      [11, 14, 1, 0.78, 0, 'harpsichord'], [15, 13, 1, 0.8, 0, 'harpsichord'],
+      [22, 13, 1, 0.8, 0, 'harpsichord'], [23, 16, 1, 0.84, 0, 'harpsichord'],
+      [30, 11, 1, 0.82, 0, 'harpsichord'], [31, 13, 1, 0.85, 0, 'harpsichord'],
+      [38, 12, 1, 0.82, 0, 'harpsichord'], [39, 14, 1, 0.86, 0, 'harpsichord'],
+      [45, 16, 1, 0.84, 0, 'harpsichord'], [47, 18, 1, 0.88, 0, 'harpsichord'],
+      [54, 14, 1, 0.84, 0, 'harpsichord'], [55, 16, 1, 0.86, 0, 'harpsichord'],
+      [59, 14, 1, 0.84, 0, 'harpsichord'], [63, 18, 1, 0.9, 0, 'harpsichord'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.82], [6, 0, 2, 0.74], [12, 4, 2, 0.8],
+      [16, 6, 2, 0.8], [22, 6, 2, 0.72], [28, 3, 2, 0.8],
+      [32, 3, 2, 0.84], [38, 3, 2, 0.76], [40, 4, 2, 0.84], [46, 4, 2, 0.78],
+      [48, 0, 2, 0.86], [54, 6, 2, 0.82], [60, 0, 3, 0.9],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 6 || s === 8 || (bar % 2 === 1 && s === 14)) h += 'K';
+      if (s === 4 || s === 12) h += 'SC';
+      if (s % 2 === 0) h += s === 14 ? 'O' : 'H';
+      if (s === 3 || s === 11) h += 'R';
+      if (bar === totalBars - 1 && s >= 12) h += s % 2 === 0 ? 'S' : 'ST';
+      return h;
+    }),
+  },
+
+  // 17. STAGE RUINS — "Crumbling Relic Groove" (Bb Phrygian Dominant, 142 BPM)
+  // Syncopated desert-temple groove!
+  stage_ruins: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Syncopated 3+3+2+3+3+2 darbuka-funk bassline
+      [0, 0, 2, 0.96], [3, 0, 2, 0.88], [6, 1, 2, 0.92], [8, 0, 2, 0.94], [11, 4, 2, 0.9], [14, 1, 2, 0.92],
+      [16, 0, 2, 0.96], [19, 0, 2, 0.88], [22, 6, 2, 0.92], [24, 5, 2, 0.92], [27, 4, 2, 0.9], [30, 1, 2, 0.94],
+      [32, 3, 2, 0.96], [35, 3, 2, 0.88], [38, 4, 2, 0.92], [40, 5, 2, 0.94], [43, 4, 2, 0.9], [46, 3, 2, 0.9],
+      [48, 1, 2, 0.96], [51, 1, 2, 0.9], [54, 0, 2, 0.94], [56, 6, 2, 0.94], [58, 1, 2, 0.96], [60, 0, 3, 1.0],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Snaky Phrygian Dominant augmented-2nd hooks (degrees 8 <-> 9)
+      [0, 7, 2, 0.94], [3, 8, 1, 0.9], [4, 9, 2, 0.98], [6, 10, 2, 0.94], [8, 9, 2, 0.92], [11, 8, 2, 0.94], [14, 7, 2, 0.92],
+      [16, 9, 2, 0.96], [19, 10, 1, 0.92], [20, 11, 2, 0.98], [22, 12, 2, 0.96], [24, 11, 2, 0.94], [27, 9, 2, 0.94], [30, 8, 2, 0.92],
+      [32, 10, 2, 0.96], [35, 11, 1, 0.92], [36, 12, 2, 0.98], [38, 14, 2, 1.0], [40, 15, 2, 1.0], [43, 14, 2, 0.96], [46, 12, 2, 0.94],
+      [48, 15, 2, 1.0], [50, 14, 1, 0.92], [51, 12, 1, 0.92], [52, 11, 2, 0.96], [54, 9, 2, 0.96], [56, 8, 2, 0.96], [58, 9, 2, 0.98], [60, 7, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Mystical temple chime syncopations
+      [2, 14, 1, 0.78, 0, 'synth_bell'], [7, 15, 1, 0.8, 0, 'synth_bell'], [13, 14, 1, 0.78, 0, 'synth_bell'],
+      [18, 16, 1, 0.8, 0, 'synth_bell'], [23, 15, 1, 0.8, 0, 'synth_bell'], [29, 14, 1, 0.78, 0, 'synth_bell'],
+      [34, 17, 1, 0.82, 0, 'synth_bell'], [39, 16, 1, 0.82, 0, 'synth_bell'], [45, 15, 1, 0.8, 0, 'synth_bell'],
+      [53, 16, 1, 0.84, 0, 'synth_bell'], [57, 15, 1, 0.84, 0, 'synth_bell'], [62, 14, 2, 0.88, 0, 'synth_bell'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.76], [6, 1, 2, 0.74], [11, 0, 2, 0.76],
+      [16, 0, 2, 0.76], [22, 6, 2, 0.74], [28, 1, 2, 0.76],
+      [32, 3, 2, 0.8], [38, 4, 2, 0.78], [44, 3, 2, 0.78],
+      [48, 1, 2, 0.82], [54, 6, 2, 0.8], [60, 0, 3, 0.85],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 3 || s === 8 || s === 11) h += 'K';
+      if (s === 4 || s === 12) h += 'S';
+      if (s === 2 || s === 6 || s === 10 || s === 14) h += 'R';
+      if (s === 0 || s === 6 || s === 12) h += 'H';
+      if (s === 14) h += 'O';
+      if (bar % 2 === 1 && (s === 7 || s === 15)) h += 'T';
+      if (bar === totalBars - 1 && s >= 13) h += 'T';
+      return h;
+    }),
+  },
+
+  // 18. STAGE CATACOMBS — "Torchlit Catacomb Caper" (G Harmonic Minor, 140 BPM)
+  // Bouncy gothic organ bassline!
+  stage_catacombs: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Bouncy leaping gothic pipe-organ pedal bassline!
+      [0, 0, 2, 0.98], [2, 7, 1, 0.88], [4, 4, 2, 0.94], [6, 7, 1, 0.86],
+      [8, 2, 2, 0.94], [10, 6, 1, 0.9], [12, 4, 2, 0.95], [14, 6, 2, 0.94],
+      [16, 0, 2, 0.98], [18, 7, 1, 0.88], [20, 5, 2, 0.94], [22, 4, 1, 0.88],
+      [24, 3, 2, 0.95], [26, 10, 1, 0.86], [28, 4, 2, 0.96], [30, 6, 2, 0.94],
+      [32, 3, 2, 0.98], [34, 10, 1, 0.88], [36, 5, 2, 0.94], [38, 7, 1, 0.88],
+      [40, 5, 2, 0.96], [42, 12, 1, 0.88], [44, 4, 2, 0.96], [46, 11, 1, 0.9],
+      [48, 0, 2, 0.98], [50, 2, 1, 0.9], [52, 3, 2, 0.95], [54, 5, 1, 0.92],
+      [56, 4, 2, 0.98], [58, 6, 2, 0.96], [60, 7, 2, 1.0], [62, 6, 2, 0.96],
+    ]),
+    lead: makeNoteTrack(64, [
+      [0, 14, 2, 0.94], [2, 13, 1, 0.88], [3, 14, 1, 0.92], [4, 16, 2, 0.96], [6, 14, 2, 0.92],
+      [8, 11, 2, 0.94], [10, 13, 2, 0.94], [12, 14, 3, 0.96],
+      [16, 16, 2, 0.96], [18, 15, 2, 0.92], [20, 14, 2, 0.94], [22, 12, 2, 0.92],
+      [24, 10, 2, 0.94], [26, 11, 2, 0.94], [28, 13, 3, 0.98],
+      [32, 17, 2, 0.96], [34, 16, 2, 0.92], [36, 15, 2, 0.94], [38, 14, 2, 0.92],
+      [40, 19, 2, 0.98], [42, 18, 2, 0.94], [44, 16, 2, 0.96], [46, 14, 2, 0.94],
+      [48, 14, 1, 0.96], [49, 13, 1, 0.9], [50, 14, 2, 0.96], [52, 16, 2, 0.98], [54, 18, 2, 0.98],
+      [56, 19, 2, 1.0], [58, 18, 2, 0.96], [60, 20, 2, 1.0], [62, 18, 2, 0.98],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Bouncy skeleton glockenspiel chimes rattling in the catacombs
+      [4, 21, 1, 0.72, 0, 'glockenspiel'], [7, 18, 1, 0.74, 0, 'glockenspiel'],
+      [14, 20, 1, 0.76, 0, 'glockenspiel'], [15, 21, 1, 0.78, 0, 'glockenspiel'],
+      [20, 19, 1, 0.74, 0, 'glockenspiel'], [23, 18, 1, 0.74, 0, 'glockenspiel'],
+      [30, 20, 1, 0.78, 0, 'glockenspiel'], [31, 18, 1, 0.76, 0, 'glockenspiel'],
+      [36, 22, 1, 0.76, 0, 'glockenspiel'], [44, 20, 1, 0.78, 0, 'glockenspiel'],
+      [52, 21, 1, 0.78, 0, 'glockenspiel'], [59, 20, 1, 0.8, 0, 'glockenspiel'], [63, 21, 1, 0.84, 0, 'glockenspiel'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 6, 0.72], [8, 4, 6, 0.74],
+      [16, 0, 6, 0.72], [24, 3, 4, 0.72], [28, 4, 4, 0.78],
+      [32, 3, 6, 0.74], [40, 5, 4, 0.74], [44, 4, 4, 0.78],
+      [48, 0, 4, 0.76], [52, 3, 4, 0.76], [56, 4, 6, 0.82],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 6 || s === 10) h += 'K';
+      if (s === 4 || s === 12) h += 'SR';
+      if (s === 2 || s === 7 || s === 14) h += 'H';
+      if (s === 3 || s === 11) h += 'R';
+      if (bar % 2 === 1 && s === 15) h += 'T';
+      if (bar === totalBars - 1 && (s === 13 || s === 14 || s === 15)) h += 'RT';
+      return h;
+    }),
+  },
+
+  // ==========================================================================
+  // Wave 2 Bespoke Arrangements — Floor 2 (Mesa, Graveyard, Farm, Saloon)
+  // ==========================================================================
+
+  // 19. STAGE MESA — "Red-Hot Mesa Stampede" (A Mixolydian, 152 BPM)
+  // Twangy desert surf guitar + cowbell!
+  stage_mesa: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      [0, 0, 1, 0.96], [3, 0, 1, 0.88], [4, 0, 2, 0.94], [8, 0, 1, 0.96], [11, 0, 1, 0.88], [12, 4, 2, 0.94], [14, 6, 2, 0.92],
+      [16, 6, 1, 0.96], [19, 6, 1, 0.88], [20, 6, 2, 0.94], [24, 3, 1, 0.96], [27, 3, 1, 0.88], [28, 4, 2, 0.94], [30, 2, 2, 0.92],
+      [32, 0, 1, 0.96], [35, 0, 1, 0.88], [36, 2, 2, 0.94], [40, 3, 1, 0.96], [43, 3, 1, 0.88], [44, 4, 2, 0.94], [46, 5, 2, 0.92],
+      [48, 6, 2, 0.96], [50, 5, 2, 0.92], [52, 4, 2, 0.94], [54, 3, 2, 0.92], [56, 2, 2, 0.94], [58, 1, 2, 0.92], [60, 0, 2, 1.0], [62, 4, 2, 0.95],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Tremolo-picked twangy desert surf guitar!
+      [0, 7, 1, 0.96], [1, 7, 1, 0.86], [2, 9, 1, 0.92], [3, 10, 1, 0.94], [4, 11, 2, 0.98], [6, 11, 1, 0.9], [7, 11, 1, 0.9],
+      [8, 13, 2, 0.98], [10, 11, 2, 0.94], [12, 9, 2, 0.94], [14, 7, 2, 0.92],
+      [16, 13, 1, 0.96], [17, 13, 1, 0.88], [18, 14, 2, 0.98], [20, 13, 2, 0.94], [22, 11, 2, 0.92],
+      [24, 10, 1, 0.96], [25, 11, 1, 0.92], [26, 10, 2, 0.94], [28, 9, 2, 0.94, -1], [30, 7, 2, 0.96],
+      [32, 14, 1, 0.98], [33, 14, 1, 0.9], [34, 16, 1, 0.95], [35, 17, 1, 0.96], [36, 18, 2, 1.0], [38, 16, 2, 0.95],
+      [40, 17, 2, 0.98], [42, 16, 2, 0.94], [44, 14, 2, 0.96], [46, 13, 2, 0.94],
+      // Classic surf-rock chromatic run-down finale!
+      [48, 16, 1, 0.98], [49, 15, 1, 0.94], [50, 14, 1, 0.96], [51, 13, 1, 0.94],
+      [52, 12, 1, 0.96], [53, 11, 1, 0.94], [54, 10, 1, 0.96], [55, 9, 1, 0.94],
+      [56, 7, 2, 0.98], [58, 11, 2, 0.98], [60, 14, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Sun-baked desert canyon brass stabs
+      [0, 0, 2, 0.86, 0, 'brass_punch'], [12, 4, 2, 0.86, 0, 'brass_punch'],
+      [16, 6, 2, 0.86, 0, 'brass_punch'], [28, 4, 2, 0.88, 0, 'brass_punch'],
+      [32, 7, 2, 0.88, 0, 'brass_punch'], [44, 11, 2, 0.9, 0, 'brass_punch'],
+      [56, 7, 2, 0.92, 0, 'brass_punch'], [60, 14, 3, 0.95, 0, 'brass_punch'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.8], [6, 0, 2, 0.72], [12, 4, 2, 0.78],
+      [16, 6, 2, 0.8], [24, 3, 2, 0.78], [28, 4, 2, 0.78],
+      [32, 0, 2, 0.82], [40, 3, 2, 0.82], [44, 4, 2, 0.82],
+      [48, 6, 2, 0.84], [52, 4, 2, 0.84], [56, 3, 2, 0.84], [60, 0, 3, 0.9],
+    ]),
+    drums: makeDrumPattern('desert_cowbell', 64),
+  },
+
+  // 20. STAGE GRAVEYARD — "Boneyard Boogie" (B Hungarian Minor, 136 BPM, swing 0.16)
+  // Spooky theremin + swung bass!
+  stage_graveyard: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Swung jazz-ghoul walking bassline with chromatic creeping steps
+      [0, 0, 3, 0.94], [4, 2, 3, 0.9], [8, 3, 3, 0.92], [12, 4, 2, 0.92], [14, 6, 2, 0.9],
+      [16, 0, 3, 0.94], [20, 5, 3, 0.9], [24, 4, 3, 0.92], [28, 2, 2, 0.9], [30, 1, 2, 0.9],
+      [32, 3, 3, 0.94], [36, 4, 3, 0.9], [40, 5, 3, 0.94], [44, 6, 2, 0.92], [46, 5, 2, 0.9],
+      [48, 4, 3, 0.96], [52, 3, 3, 0.92], [56, 2, 2, 0.92], [58, 1, 2, 0.9], [60, 0, 2, 0.96], [62, 6, 2, 0.94],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Haunting swooping spooky theremin wails across Hungarian minor!
+      [0, 14, 4, 0.94], [4, 13, 3, 0.9], [8, 11, 4, 0.94], [12, 10, 3, 0.92],
+      [16, 14, 3, 0.94], [20, 16, 3, 0.96], [24, 17, 4, 0.98], [28, 16, 3, 0.94],
+      [32, 17, 4, 0.98], [36, 18, 3, 0.96], [40, 19, 4, 1.0], [44, 18, 2, 0.94], [46, 17, 2, 0.92],
+      [48, 16, 3, 0.96], [52, 14, 3, 0.94], [56, 13, 3, 0.96], [60, 14, 4, 0.98],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Spooky rattling cartoon skeleton harpsichord punctuation
+      [2, 7, 1, 0.78, 0, 'harpsichord'], [6, 9, 1, 0.78, 0, 'harpsichord'], [14, 13, 1, 0.82, 0, 'harpsichord'],
+      [18, 11, 1, 0.78, 0, 'harpsichord'], [22, 12, 1, 0.8, 0, 'harpsichord'], [30, 11, 1, 0.82, 0, 'harpsichord'],
+      [34, 10, 1, 0.8, 0, 'harpsichord'], [38, 12, 1, 0.8, 0, 'harpsichord'], [46, 13, 1, 0.84, 0, 'harpsichord'],
+      [50, 11, 1, 0.82, 0, 'harpsichord'], [54, 10, 1, 0.82, 0, 'harpsichord'], [58, 13, 1, 0.84, 0, 'harpsichord'], [62, 14, 1, 0.86, 0, 'harpsichord'],
+    ]),
+    chords: makeChordTrack(64, [
+      [4, 0, 2, 0.68], [12, 4, 2, 0.7], [20, 0, 2, 0.68], [28, 4, 2, 0.72],
+      [36, 3, 2, 0.72], [44, 5, 2, 0.74], [52, 4, 2, 0.74], [60, 0, 3, 0.78],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 8 || (bar % 2 === 1 && s === 14)) h += 'K';
+      if (s === 4 || s === 12) h += 'R';
+      if (s === 0 || s === 4 || s === 7 || s === 8 || s === 12 || s === 15) h += 'H';
+      if (bar % 2 === 1 && s === 11) h += 'R';
+      if (bar === totalBars - 1 && (s === 13 || s === 14 || s === 15)) h += 'RT';
+      return h;
+    }),
+  },
+
+  // 21. STAGE FARM — "Barnyard Hoedown Dash" (G Pentatonic Major, 5-note scale, 146 BPM)
+  // Hoedown banjo-pluck funk!
+  stage_farm: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // 5-note pentatonic: 0=G, 1=A, 2=B, 3=D, 4=E, 5=G'
+      [0, 0, 2, 0.95], [3, 0, 1, 0.82], [4, 3, 2, 0.9], [6, 5, 2, 0.92],
+      [8, 0, 2, 0.95], [10, 2, 2, 0.88], [12, 3, 2, 0.92], [14, 4, 2, 0.9],
+      [16, 0, 2, 0.95], [19, 0, 1, 0.82], [20, 5, 2, 0.92], [22, 4, 2, 0.9],
+      [24, 3, 2, 0.94], [26, 2, 2, 0.88], [28, 1, 2, 0.9], [30, 3, 2, 0.92],
+      [32, 4, 2, 0.95], [35, 4, 1, 0.82], [36, 3, 2, 0.9], [38, 2, 2, 0.88],
+      [40, 3, 2, 0.95], [43, 3, 1, 0.82], [44, 4, 2, 0.92], [46, 5, 2, 0.92],
+      [48, 0, 2, 0.96], [50, 2, 2, 0.9], [52, 3, 2, 0.94], [54, 4, 2, 0.92],
+      [56, 3, 2, 0.95], [58, 1, 2, 0.9], [60, 0, 2, 1.0], [62, 3, 2, 0.94],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Rolling bluegrass banjo-pluck funk! (5=G4, 6=A4, 7=B4, 8=D5, 9=E5, 10=G5, 12=B5)
+      [0, 5, 1, 0.96], [1, 7, 1, 0.88], [2, 8, 1, 0.94], [3, 10, 1, 0.96], [4, 9, 2, 0.95], [6, 8, 1, 0.9], [7, 7, 1, 0.88, -1],
+      [8, 7, 2, 0.96], [10, 5, 2, 0.92], [12, 8, 1, 0.95], [13, 7, 1, 0.9], [14, 6, 2, 0.92],
+      [16, 5, 1, 0.96], [17, 7, 1, 0.88], [18, 8, 1, 0.94], [19, 10, 1, 0.98], [20, 11, 2, 0.98], [22, 10, 2, 0.94],
+      [24, 8, 1, 0.95], [25, 9, 1, 0.92], [26, 8, 2, 0.94], [28, 7, 2, 0.92], [30, 5, 2, 0.94],
+      [32, 9, 1, 0.96], [33, 10, 1, 0.94], [34, 11, 2, 0.98], [36, 10, 1, 0.94], [37, 9, 1, 0.92], [38, 8, 2, 0.94],
+      [40, 8, 1, 0.96], [41, 10, 1, 0.94], [42, 12, 2, 1.0], [44, 11, 2, 0.96], [46, 10, 2, 0.94],
+      [48, 10, 1, 0.98], [49, 9, 1, 0.92], [50, 8, 1, 0.95], [51, 7, 1, 0.92, -1], [52, 7, 1, 0.96], [53, 8, 1, 0.94], [54, 10, 2, 0.98],
+      [56, 8, 2, 0.96], [58, 6, 2, 0.94], [60, 5, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Playful barnyard fiddle-whistle call-and-response
+      [4, 12, 2, 0.82, 0, 'whistle_flute'], [10, 10, 2, 0.82, 0, 'whistle_flute'],
+      [20, 13, 2, 0.84, 0, 'whistle_flute'], [28, 10, 2, 0.82, 0, 'whistle_flute'],
+      [36, 12, 2, 0.84, 0, 'whistle_flute'], [44, 13, 2, 0.86, 0, 'whistle_flute'],
+      [54, 12, 2, 0.86, 0, 'whistle_flute'], [60, 10, 3, 0.9, 0, 'whistle_flute'],
+    ]),
+    chords: makeChordTrack(64, [
+      [2, 0, 2, 0.72], [6, 0, 2, 0.68], [10, 3, 2, 0.74], [14, 3, 2, 0.7],
+      [18, 0, 2, 0.72], [22, 0, 2, 0.68], [26, 3, 2, 0.74], [30, 3, 2, 0.7],
+      [34, 4, 2, 0.76], [38, 4, 2, 0.72], [42, 3, 2, 0.76], [46, 3, 2, 0.74],
+      [50, 0, 2, 0.76], [54, 3, 2, 0.78], [60, 0, 3, 0.82],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 3 || s === 8 || s === 11) h += 'K';
+      if (s === 4 || s === 12) h += 'SC';
+      if (s === 2 || s === 6 || s === 10 || s === 14) h += 'R';
+      if (s === 0 || s === 8 || (bar % 2 === 1 && s === 14)) h += 'B';
+      if (bar === totalBars - 1 && s >= 13) h += 'TS';
+      return h;
+    }),
+  },
+
+  // 22. STAGE SALOON — "High-Noon Honky-Tonk" (D Mixolydian, 150 BPM, swing 0.14)
+  // Ragtime honky-tonk sprint!
+  stage_saloon: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Classic ragtime stride left-hand bass jumping root <-> 5th/octave
+      [0, 0, 2, 0.96], [4, 4, 2, 0.86], [8, 0, 2, 0.94], [12, 4, 2, 0.88],
+      [16, 5, 2, 0.95], [20, 2, 2, 0.86], [24, 1, 2, 0.95], [28, 4, 2, 0.9],
+      [32, 3, 2, 0.96], [36, 0, 2, 0.86], [40, 2, 2, 0.94], [44, 5, 2, 0.88],
+      [48, 1, 2, 0.96], [52, 4, 2, 0.94], [56, 0, 2, 0.98], [58, 2, 2, 0.92], [60, 4, 2, 0.96], [62, 0, 2, 1.0],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Syncopated Scott-Joplin-on-espresso honky-tonk ragtime sprint!
+      [0, 7, 1, 0.96], [1, 8, 1, 0.9, 1], [2, 9, 2, 0.98], [4, 11, 1, 0.94], [5, 14, 2, 1.0], [7, 11, 1, 0.9],
+      [8, 9, 2, 0.96], [10, 11, 1, 0.92], [11, 12, 2, 0.98], [13, 11, 1, 0.92], [14, 9, 2, 0.94],
+      [16, 12, 1, 0.96], [17, 11, 1, 0.92], [18, 12, 2, 0.98], [20, 14, 1, 0.96], [21, 12, 2, 0.96], [23, 11, 1, 0.9],
+      [24, 10, 1, 0.96, 1], [25, 11, 1, 0.94], [26, 13, 2, 0.98], [28, 11, 2, 0.96], [30, 9, 2, 0.94],
+      [32, 10, 1, 0.96], [33, 12, 1, 0.94], [34, 14, 2, 0.98], [36, 15, 1, 0.96], [37, 14, 2, 0.98], [39, 12, 1, 0.92],
+      [40, 11, 2, 0.96], [42, 12, 1, 0.94], [43, 14, 2, 0.98], [45, 13, 1, 0.92], [46, 11, 2, 0.94],
+      [48, 15, 1, 1.0], [49, 14, 1, 0.94], [50, 13, 1, 0.94], [51, 12, 1, 0.92], [52, 11, 2, 0.98], [54, 13, 2, 0.98],
+      [56, 14, 2, 1.0], [58, 11, 2, 0.96], [60, 14, 2, 1.0], [62, 16, 2, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Sparkling high saloon tack-piano chimes
+      [2, 16, 1, 0.78, 0, 'honky_tonk'], [5, 18, 1, 0.82, 0, 'honky_tonk'],
+      [11, 19, 1, 0.8, 0, 'honky_tonk'], [18, 19, 1, 0.8, 0, 'honky_tonk'],
+      [26, 20, 1, 0.82, 0, 'honky_tonk'], [34, 21, 1, 0.84, 0, 'honky_tonk'],
+      [43, 21, 1, 0.84, 0, 'honky_tonk'], [52, 18, 1, 0.86, 0, 'honky_tonk'], [60, 21, 2, 0.9, 0, 'honky_tonk'],
+    ]),
+    chords: makeChordTrack(64, [
+      [4, 0, 2, 0.72], [12, 0, 2, 0.72], [20, 5, 2, 0.72], [28, 4, 2, 0.74],
+      [36, 3, 2, 0.74], [44, 2, 2, 0.72], [52, 4, 2, 0.78], [60, 0, 2, 0.82],
+    ]),
+    drums: makeDrumPattern('ragtime_stomp', 64),
+  },
+
+  // ==========================================================================
+  // Wave 2 Bespoke Arrangements — Floor 3 Remaining (Pier, Orbit, Golf)
+  // ==========================================================================
+
+  // 23. STAGE PIER — "Boardwalk Splashdown" (C Major, 146 BPM)
+  // Tropical steel-drum + slap bass!
+  stage_pier: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Popping tropical boardwalk slap bass
+      [0, 0, 2, 0.96], [3, 0, 1, 0.82], [6, 4, 2, 0.92], [10, 2, 2, 0.9], [12, 4, 2, 0.92], [14, 7, 2, 0.94],
+      [16, 3, 2, 0.96], [19, 3, 1, 0.82], [22, 5, 2, 0.92], [26, 4, 2, 0.9], [28, 2, 2, 0.9], [30, 4, 2, 0.92],
+      [32, 5, 2, 0.96], [35, 5, 1, 0.82], [38, 4, 2, 0.92], [42, 3, 2, 0.92], [44, 5, 2, 0.92], [46, 3, 2, 0.9],
+      [48, 4, 2, 0.96], [51, 4, 1, 0.84], [54, 6, 2, 0.94], [56, 7, 2, 0.96], [58, 4, 2, 0.94], [60, 0, 3, 1.0],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Bright sunny Caribbean steel-drum calypso melody!
+      [0, 11, 2, 0.96], [2, 12, 1, 0.9], [3, 14, 2, 0.98], [6, 11, 2, 0.94], [8, 9, 2, 0.92], [10, 11, 2, 0.94], [12, 14, 3, 0.98],
+      [16, 12, 2, 0.96], [18, 14, 1, 0.92], [19, 15, 2, 0.98], [22, 14, 2, 0.94], [24, 11, 2, 0.94], [26, 12, 2, 0.92], [28, 11, 3, 0.94],
+      [32, 16, 2, 0.98], [34, 14, 1, 0.92], [35, 12, 2, 0.96], [38, 14, 2, 0.96], [40, 15, 2, 0.98], [42, 14, 2, 0.94], [44, 12, 3, 0.96],
+      [48, 14, 2, 0.98], [50, 15, 2, 0.98], [52, 16, 2, 1.0], [54, 18, 2, 1.0], [56, 16, 2, 0.98], [58, 14, 2, 0.96], [60, 14, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Sunny boardwalk brass stabs answering the steel pan
+      [6, 7, 2, 0.82, 0, 'brass_punch'], [14, 11, 2, 0.86, 0, 'brass_punch'],
+      [22, 10, 2, 0.82, 0, 'brass_punch'], [30, 11, 2, 0.86, 0, 'brass_punch'],
+      [38, 12, 2, 0.84, 0, 'brass_punch'], [46, 10, 2, 0.84, 0, 'brass_punch'],
+      [54, 11, 2, 0.88, 0, 'brass_punch'], [60, 14, 3, 0.92, 0, 'brass_punch'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.72], [6, 0, 2, 0.68], [12, 4, 2, 0.72],
+      [16, 3, 2, 0.72], [22, 3, 2, 0.68], [28, 4, 2, 0.74],
+      [32, 5, 2, 0.74], [38, 3, 2, 0.72], [44, 3, 2, 0.74],
+      [48, 4, 2, 0.76], [54, 4, 2, 0.76], [60, 0, 3, 0.82],
+    ]),
+    drums: makeDrumPattern('steel_calypso', 64),
+  },
+
+  // 24. STAGE ORBIT — "Zero-G Funk Odyssey" (Bb Lydian, 148 BPM, straight 0.0)
+  // Retro synthwave arps + vocoder square lead!
+  stage_orbit: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Driving 80s outrun pulsing 8th-note synthwave bass!
+      [0, 0, 1, 0.96], [2, 0, 1, 0.86], [4, 7, 1, 0.92], [6, 0, 1, 0.86],
+      [8, 0, 1, 0.96], [10, 7, 1, 0.88], [12, 0, 1, 0.94], [14, 4, 1, 0.9],
+      [16, 1, 1, 0.96], [18, 1, 1, 0.86], [20, 8, 1, 0.92], [22, 1, 1, 0.86],
+      [24, 1, 1, 0.96], [26, 8, 1, 0.88], [28, 1, 1, 0.94], [30, 4, 1, 0.9],
+      [32, 5, 1, 0.96], [34, 5, 1, 0.86], [36, 12, 1, 0.92], [38, 5, 1, 0.86],
+      [40, 3, 1, 0.96], [42, 10, 1, 0.88], [44, 3, 1, 0.94], [46, 4, 1, 0.92],
+      [48, 4, 1, 0.96], [50, 4, 1, 0.88], [52, 11, 1, 0.94], [54, 4, 1, 0.88],
+      [56, 6, 1, 0.96], [58, 5, 1, 0.92], [60, 4, 2, 0.98], [62, 6, 2, 0.96],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Soaring cosmic vocoder square lead celebrating Lydian #4 (deg 10)!
+      [0, 14, 3, 0.96], [4, 11, 2, 0.92], [6, 13, 2, 0.94], [8, 14, 3, 0.98], [12, 16, 2, 0.96], [14, 14, 2, 0.92],
+      [16, 15, 3, 0.98], [20, 13, 2, 0.94], [22, 11, 2, 0.92], [24, 10, 3, 0.96], [28, 11, 2, 0.94], [30, 13, 2, 0.94],
+      [32, 16, 3, 0.98], [36, 14, 2, 0.94], [38, 13, 2, 0.94], [40, 14, 2, 0.96], [42, 16, 2, 0.98], [44, 17, 3, 1.0],
+      [48, 18, 3, 1.0], [52, 16, 2, 0.96], [54, 14, 2, 0.94], [56, 13, 2, 0.96], [58, 14, 2, 0.98], [60, 16, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Continuous shimmering 16th-note retro synthwave arpeggios!
+      [0, 7, 1, 0.68, 0, 'synth_bell'], [1, 9, 1, 0.64, 0, 'synth_bell'], [2, 11, 1, 0.68, 0, 'synth_bell'], [3, 14, 1, 0.72, 0, 'synth_bell'],
+      [4, 11, 1, 0.64, 0, 'synth_bell'], [5, 9, 1, 0.62, 0, 'synth_bell'], [6, 7, 1, 0.66, 0, 'synth_bell'], [7, 11, 1, 0.68, 0, 'synth_bell'],
+      [8, 7, 1, 0.68, 0, 'synth_bell'], [9, 9, 1, 0.64, 0, 'synth_bell'], [10, 11, 1, 0.68, 0, 'synth_bell'], [11, 14, 1, 0.72, 0, 'synth_bell'],
+      [12, 11, 1, 0.66, 0, 'synth_bell'], [13, 9, 1, 0.62, 0, 'synth_bell'], [14, 11, 1, 0.66, 0, 'synth_bell'], [15, 13, 1, 0.7, 0, 'synth_bell'],
+      [16, 8, 1, 0.68, 0, 'synth_bell'], [17, 10, 1, 0.66, 0, 'synth_bell'], [18, 12, 1, 0.68, 0, 'synth_bell'], [19, 15, 1, 0.72, 0, 'synth_bell'],
+      [20, 12, 1, 0.64, 0, 'synth_bell'], [21, 10, 1, 0.64, 0, 'synth_bell'], [22, 8, 1, 0.66, 0, 'synth_bell'], [23, 12, 1, 0.68, 0, 'synth_bell'],
+      [24, 8, 1, 0.68, 0, 'synth_bell'], [25, 10, 1, 0.66, 0, 'synth_bell'], [26, 12, 1, 0.68, 0, 'synth_bell'], [27, 15, 1, 0.72, 0, 'synth_bell'],
+      [28, 12, 1, 0.66, 0, 'synth_bell'], [29, 10, 1, 0.64, 0, 'synth_bell'], [30, 11, 1, 0.66, 0, 'synth_bell'], [31, 13, 1, 0.7, 0, 'synth_bell'],
+      [32, 12, 1, 0.7, 0, 'synth_bell'], [33, 14, 1, 0.66, 0, 'synth_bell'], [34, 16, 1, 0.7, 0, 'synth_bell'], [35, 19, 1, 0.74, 0, 'synth_bell'],
+      [36, 16, 1, 0.66, 0, 'synth_bell'], [37, 14, 1, 0.64, 0, 'synth_bell'], [38, 12, 1, 0.68, 0, 'synth_bell'], [39, 14, 1, 0.7, 0, 'synth_bell'],
+      [40, 10, 1, 0.7, 0, 'synth_bell'], [41, 12, 1, 0.66, 0, 'synth_bell'], [42, 14, 1, 0.7, 0, 'synth_bell'], [43, 17, 1, 0.74, 0, 'synth_bell'],
+      [44, 14, 1, 0.66, 0, 'synth_bell'], [45, 12, 1, 0.64, 0, 'synth_bell'], [46, 14, 1, 0.68, 0, 'synth_bell'], [47, 16, 1, 0.72, 0, 'synth_bell'],
+      [48, 11, 1, 0.7, 0, 'synth_bell'], [49, 13, 1, 0.68, 0, 'synth_bell'], [50, 15, 1, 0.72, 0, 'synth_bell'], [51, 18, 1, 0.76, 0, 'synth_bell'],
+      [52, 15, 1, 0.68, 0, 'synth_bell'], [53, 13, 1, 0.66, 0, 'synth_bell'], [54, 11, 1, 0.7, 0, 'synth_bell'], [55, 15, 1, 0.72, 0, 'synth_bell'],
+      [56, 13, 1, 0.72, 0, 'synth_bell'], [57, 14, 1, 0.7, 0, 'synth_bell'], [58, 16, 1, 0.74, 0, 'synth_bell'], [59, 18, 1, 0.78, 0, 'synth_bell'],
+      [60, 16, 1, 0.72, 0, 'synth_bell'], [61, 14, 1, 0.7, 0, 'synth_bell'], [62, 13, 1, 0.72, 0, 'synth_bell'], [63, 15, 1, 0.76, 0, 'synth_bell'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 6, 0.78], [8, 0, 6, 0.74],
+      [16, 1, 6, 0.78], [24, 1, 6, 0.74],
+      [32, 5, 6, 0.8], [40, 3, 6, 0.78],
+      [48, 4, 6, 0.82], [56, 4, 6, 0.82],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 4 || s === 8 || s === 12) h += 'K';
+      if (s === 4 || s === 12) h += 'SC';
+      if (s % 2 === 0) h += s === 14 ? 'O' : 'H';
+      if (bar === totalBars - 1 && s >= 12) h += 'T';
+      return h;
+    }),
+  },
+
+  // 25. STAGE GOLF — "Par-Five Swingin' Green" (F Major, 134 BPM, swing 0.16)
+  // Chill-yet-funky lounge fusion!
+  stage_golf: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Pocketed chill-yet-funky fusion slap-thumb bassline (IV - iii - ii - V - I)
+      [0, 3, 2, 0.9], [3, 3, 1, 0.78], [6, 5, 2, 0.86], [10, 7, 2, 0.88], [14, 5, 2, 0.85],
+      [16, 2, 2, 0.9], [19, 2, 1, 0.78], [22, 4, 2, 0.86], [26, 6, 2, 0.88], [30, 4, 2, 0.85],
+      [32, 1, 2, 0.9], [35, 1, 1, 0.78], [38, 3, 2, 0.86], [40, 4, 2, 0.9], [43, 4, 1, 0.78], [46, 6, 2, 0.88],
+      [48, 0, 2, 0.92], [51, 0, 1, 0.8], [54, 4, 2, 0.88], [56, 5, 2, 0.88], [58, 4, 2, 0.86], [60, 2, 2, 0.88], [62, 4, 2, 0.88],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Smooth lounge-fusion sax melodies with cool breathing room
+      [2, 10, 2, 0.88], [4, 12, 3, 0.92], [10, 14, 2, 0.94], [12, 12, 2, 0.88], [14, 11, 2, 0.86],
+      [18, 9, 2, 0.88], [20, 11, 3, 0.92], [26, 13, 2, 0.92], [28, 11, 2, 0.88], [30, 9, 2, 0.86],
+      [34, 8, 2, 0.88], [36, 10, 2, 0.9], [38, 12, 2, 0.92], [42, 13, 2, 0.94], [44, 11, 3, 0.92],
+      [50, 14, 2, 0.94], [52, 12, 2, 0.9], [54, 11, 2, 0.9], [58, 9, 2, 0.88], [60, 11, 3, 0.94],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Sparkling lounge vibraphone fills in the rests
+      [7, 17, 2, 0.72, 0, 'synth_bell'], [15, 16, 2, 0.72, 0, 'synth_bell'],
+      [23, 16, 2, 0.72, 0, 'synth_bell'], [31, 14, 2, 0.72, 0, 'synth_bell'],
+      [39, 15, 2, 0.74, 0, 'synth_bell'], [47, 16, 2, 0.74, 0, 'synth_bell'],
+      [55, 18, 2, 0.76, 0, 'synth_bell'], [62, 14, 2, 0.78, 0, 'synth_bell'],
+    ]),
+    chords: makeChordTrack(64, [
+      // Lush 4-note Fender Rhodes Maj7 / min7 lounge voicings!
+      [0, 3, 4, 0.72, 'rhodes_lounge', [0, 2, 4, 6]], [6, 3, 2, 0.64, 'rhodes_lounge', [0, 2, 4, 6]],
+      [16, 2, 4, 0.72, 'rhodes_lounge', [0, 2, 4, 6]], [22, 2, 2, 0.64, 'rhodes_lounge', [0, 2, 4, 6]],
+      [32, 1, 4, 0.72, 'rhodes_lounge', [0, 2, 4, 6]], [40, 4, 4, 0.74, 'rhodes_lounge', [0, 2, 4, 6]],
+      [48, 0, 4, 0.76, 'rhodes_lounge', [0, 2, 4, 6]], [58, 4, 3, 0.74, 'rhodes_lounge', [0, 2, 4, 6]],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 6 || s === 10) h += 'K';
+      if (s === 4 || s === 12) h += 'R';
+      if (s === 0 || s === 4 || s === 7 || s === 8 || s === 12 || s === 15) h += 'H';
+      if (bar % 2 === 1 && s === 14) h += 'O';
+      if (bar === totalBars - 1 && s === 14) h += 'T';
+      return h;
+    }),
+  },
+
+  // ==========================================================================
+  // Wave 2 Bespoke Arrangements — Floor 4 (Metro, Drain, Foundry, Freezer)
+  // ==========================================================================
+
+  // 26. STAGE METRO — "Midnight Metro Express" (Ab Dorian, 138 BPM, swing 0.15)
+  // Boom-bap hip-hop brass breakbeat!
+  stage_metro: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Deep punchy 90s boom-bap sub-bass locked to the breakbeat kicks
+      [0, 0, 3, 0.98], [7, 0, 2, 0.9], [10, 2, 2, 0.92], [14, 3, 2, 0.9],
+      [16, 0, 3, 0.98], [23, 6, 2, 0.92], [26, 4, 2, 0.92], [30, 2, 2, 0.9],
+      [32, 3, 3, 0.98], [39, 3, 2, 0.9], [42, 4, 2, 0.92], [46, 5, 2, 0.92],
+      [48, 6, 3, 0.98], [52, 4, 2, 0.94], [56, 3, 2, 0.94], [58, 2, 2, 0.92], [60, 0, 3, 1.0],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Chopped 90s NYC jazz-rap brass stabs & urban horn hook!
+      [0, 7, 2, 0.98], [3, 9, 2, 0.92], [6, 11, 3, 0.98], [12, 9, 2, 0.94],
+      [16, 7, 2, 0.96], [19, 10, 2, 0.96], [22, 9, 2, 0.92], [26, 7, 3, 0.96],
+      [32, 10, 2, 0.98], [35, 12, 2, 0.96], [38, 13, 3, 1.0], [44, 11, 2, 0.94],
+      [48, 13, 2, 1.0], [50, 12, 2, 0.96], [52, 11, 2, 0.98], [56, 9, 2, 0.96], [58, 11, 2, 0.96], [60, 14, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Smoky late-night subway sax licks weaving between the brass chops
+      [9, 14, 2, 0.84, 0, 'sax_honk'], [14, 13, 2, 0.82, 0, 'sax_honk'],
+      [24, 13, 2, 0.84, 0, 'sax_honk'], [29, 11, 2, 0.82, 0, 'sax_honk'],
+      [41, 14, 2, 0.86, 0, 'sax_honk'], [46, 12, 2, 0.84, 0, 'sax_honk'],
+      [54, 14, 2, 0.86, 0, 'sax_honk'], [62, 13, 2, 0.86, 0, 'sax_honk'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.76, 'funk_clav', [0, 2, 4, 6]], [6, 0, 2, 0.68, 'funk_clav', [0, 2, 4, 6]],
+      [16, 0, 2, 0.76, 'funk_clav', [0, 2, 4, 6]], [26, 4, 2, 0.72, 'funk_clav', [0, 2, 4, 6]],
+      [32, 3, 2, 0.78, 'funk_clav', [0, 2, 4, 6]], [42, 4, 2, 0.74, 'funk_clav', [0, 2, 4, 6]],
+      [48, 6, 2, 0.8, 'funk_clav', [0, 2, 4, 6]], [56, 4, 2, 0.78, 'funk_clav', [0, 2, 4, 6]], [60, 0, 3, 0.84, 'funk_clav', [0, 2, 4, 6]],
+    ]),
+    drums: makeDrumPattern('boom_bap', 64),
+  },
+
+  // 27. STAGE DRAIN — "Sewer Slime Jam" (F# Blues, 6-note scale, 140 BPM, swing 0.12)
+  // Squelchy acid-bass funk!
+  stage_drain: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // 6-note blues: 0=F#, 1=A, 2=B, 3=C(b5), 4=C#, 5=E, 6=F#', 7=A', 8=B', 9=C', 10=C#'
+      // Relentless TB-303 squelchy acid-bass funk!
+      [0, 0, 1, 0.98], [2, 6, 1, 0.9], [3, 5, 1, 0.86], [5, 0, 1, 0.94], [6, 1, 2, 0.92],
+      [8, 2, 1, 0.96], [10, 3, 1, 0.94], [11, 4, 1, 0.94], [13, 6, 1, 0.92], [14, 5, 2, 0.92],
+      [16, 0, 1, 0.98], [18, 6, 1, 0.9], [20, 4, 1, 0.94], [21, 3, 1, 0.9], [22, 2, 2, 0.94],
+      [24, 1, 1, 0.94], [26, 7, 1, 0.9], [28, 5, 2, 0.94], [30, 4, 2, 0.92],
+      [32, 2, 1, 0.98], [34, 8, 1, 0.92], [35, 7, 1, 0.88], [37, 2, 1, 0.94], [38, 3, 2, 0.94],
+      [40, 4, 1, 0.98], [42, 10, 1, 0.92], [44, 5, 2, 0.94], [46, 4, 2, 0.92],
+      [48, 0, 1, 0.98], [50, 6, 1, 0.92], [52, 5, 1, 0.94], [54, 4, 1, 0.94],
+      [56, 3, 2, 0.96], [58, 2, 2, 0.94], [60, 1, 2, 0.96], [62, 5, 2, 0.96],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Bubbling squelchy wah-funk sewer hooks!
+      [0, 6, 2, 0.94], [3, 7, 1, 0.88], [4, 8, 2, 0.96], [6, 9, 2, 0.96], [8, 10, 2, 0.98], [11, 8, 2, 0.92], [14, 7, 2, 0.92],
+      [18, 12, 2, 0.98], [20, 11, 2, 0.94], [22, 10, 2, 0.94], [24, 9, 2, 0.96], [26, 8, 2, 0.92], [28, 6, 3, 0.96],
+      [32, 8, 2, 0.96], [35, 9, 1, 0.92], [36, 10, 2, 0.98], [38, 11, 2, 0.96], [40, 12, 2, 1.0], [43, 10, 2, 0.94], [46, 8, 2, 0.92],
+      [48, 12, 1, 0.98], [49, 11, 1, 0.92], [50, 10, 2, 0.96], [52, 9, 2, 0.96], [54, 8, 2, 0.94], [56, 7, 2, 0.94], [58, 6, 2, 0.96], [60, 12, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Cheeky dripping cartoon sewer-blips
+      [7, 13, 1, 0.76, 0, 'square_cartoon'], [15, 12, 1, 0.78, 0, 'square_cartoon'],
+      [23, 14, 1, 0.78, 0, 'square_cartoon'], [31, 11, 1, 0.78, 0, 'square_cartoon'],
+      [39, 15, 1, 0.8, 0, 'square_cartoon'], [47, 12, 1, 0.8, 0, 'square_cartoon'],
+      [55, 13, 1, 0.82, 0, 'square_cartoon'], [63, 14, 1, 0.84, 0, 'square_cartoon'],
+    ]),
+    chords: makeChordTrack(64, [
+      [2, 0, 2, 0.72], [6, 0, 2, 0.68], [12, 4, 2, 0.74],
+      [18, 0, 2, 0.72], [26, 5, 2, 0.72], [34, 2, 2, 0.76],
+      [42, 4, 2, 0.76], [50, 0, 2, 0.78], [58, 5, 2, 0.78],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 6 || s === 10 || (bar % 2 === 1 && s === 14)) h += 'K';
+      if (s === 4 || s === 12) h += 'SC';
+      if (s === 2 || s === 9) h += 'R';
+      if (s % 2 === 0) h += s === 14 ? 'O' : 'H';
+      if (bar % 2 === 1 && s === 7) h += 'A';
+      if (bar === totalBars - 1 && (s === 13 || s === 14 || s === 15)) h += 'TA';
+      return h;
+    }),
+  },
+
+  // 28. STAGE FOUNDRY — "Piston-Pound Foundry" (E Phrygian, 156 BPM, straight 0.0)
+  // Industrial anvil percussion + driving saw riff!
+  stage_foundry: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Heavy mechanical piston-stomp bass locked to the industrial saw riff
+      [0, 0, 2, 1.0], [2, 0, 1, 0.9], [4, 1, 2, 0.96], [6, 0, 2, 0.96],
+      [8, 0, 2, 1.0], [10, 4, 2, 0.96], [12, 1, 2, 0.98], [14, 0, 2, 0.96],
+      [16, 0, 2, 1.0], [18, 0, 1, 0.9], [20, 6, 2, 0.96], [22, 5, 2, 0.96],
+      [24, 4, 2, 0.98], [26, 3, 2, 0.94], [28, 1, 2, 0.98], [30, 0, 2, 0.96],
+      [32, 3, 2, 1.0], [34, 3, 1, 0.9], [36, 4, 2, 0.96], [38, 3, 2, 0.94],
+      [40, 5, 2, 1.0], [42, 4, 2, 0.96], [44, 3, 2, 0.96], [46, 1, 2, 0.98],
+      [48, 0, 2, 1.0], [50, 1, 2, 0.98], [52, 2, 2, 0.96], [54, 4, 2, 0.98],
+      [56, 5, 2, 1.0], [58, 4, 2, 0.98], [60, 1, 2, 1.0], [62, 0, 2, 1.0],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Blistering WaveShaper-driven industrial sawtooth metal riff!
+      [0, 7, 1, 1.0], [1, 7, 1, 0.92], [2, 8, 2, 0.98], [4, 7, 1, 0.96], [5, 7, 1, 0.9], [6, 11, 2, 1.0],
+      [8, 10, 2, 0.98, 1], [10, 11, 2, 1.0], [12, 8, 2, 0.98], [14, 7, 2, 0.96],
+      [16, 7, 1, 1.0], [17, 7, 1, 0.92], [18, 8, 2, 0.98], [20, 13, 2, 1.0], [22, 12, 2, 0.96],
+      [24, 11, 2, 0.98], [26, 9, 2, 0.94], [28, 8, 2, 0.98], [30, 7, 2, 0.96],
+      [32, 10, 1, 1.0], [33, 10, 1, 0.92], [34, 11, 2, 0.98], [36, 12, 2, 0.98], [38, 11, 2, 0.96],
+      [40, 12, 1, 1.0], [41, 12, 1, 0.92], [42, 14, 2, 1.0], [44, 15, 2, 1.0], [46, 14, 2, 0.98],
+      [48, 14, 2, 1.0], [50, 15, 2, 1.0], [52, 14, 2, 0.98], [54, 11, 2, 0.98],
+      [56, 12, 2, 1.0], [58, 11, 2, 0.98], [60, 8, 2, 1.0], [62, 7, 2, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Crushing steam-piston war-horn blasts punching on bar downbeats
+      [0, 0, 3, 0.92, 0, 'war_horn'], [12, 1, 2, 0.9, 0, 'war_horn'],
+      [16, 0, 3, 0.92, 0, 'war_horn'], [28, 1, 2, 0.9, 0, 'war_horn'],
+      [32, 3, 3, 0.94, 0, 'war_horn'], [40, 5, 3, 0.94, 0, 'war_horn'],
+      [48, 0, 3, 0.96, 0, 'war_horn'], [60, 1, 3, 0.98, 0, 'war_horn'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.88], [4, 1, 2, 0.86], [8, 0, 2, 0.88], [12, 1, 2, 0.88],
+      [16, 0, 2, 0.88], [20, 6, 2, 0.86], [24, 4, 2, 0.88], [28, 1, 2, 0.88],
+      [32, 3, 2, 0.9], [36, 4, 2, 0.88], [40, 5, 2, 0.9], [46, 1, 2, 0.9],
+      [48, 0, 2, 0.92], [54, 4, 2, 0.92], [60, 1, 2, 0.94], [62, 0, 2, 0.94],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 6 || s === 8 || s === 10 || s === 14) h += 'K';
+      if (s === 4 || s === 12) h += 'SA';
+      // Relentless factory anvil clangs!
+      if (s === 2 || s === 10 || (bar % 2 === 1 && (s === 7 || s === 15))) h += 'A';
+      if (s === 6 || s === 14) h += 'O';
+      else if (s % 2 === 0) h += 'H';
+      if (bar === totalBars - 1 && s >= 12) h += 'SA';
+      return h;
+    }),
+  },
+
+  // 29. STAGE FREEZER — "Sub-Zero Frostbite" (Eb Minor, 144 BPM)
+  // Crystalline glockenspiel + brisk chiptune pulse!
+  stage_freezer: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Brisk frosty 8-bit octave-pump bass
+      [0, 0, 1, 0.94], [2, 7, 1, 0.86], [4, 0, 1, 0.94], [6, 7, 1, 0.86],
+      [8, 5, 1, 0.94], [10, 12, 1, 0.86], [12, 5, 1, 0.94], [14, 12, 1, 0.86],
+      [16, 2, 1, 0.94], [18, 9, 1, 0.86], [20, 2, 1, 0.94], [22, 9, 1, 0.86],
+      [24, 6, 1, 0.94], [26, 13, 1, 0.86], [28, 4, 2, 0.94], [30, 6, 2, 0.92],
+      [32, 3, 1, 0.94], [34, 10, 1, 0.86], [36, 3, 1, 0.94], [38, 10, 1, 0.86],
+      [40, 5, 1, 0.94], [42, 12, 1, 0.86], [44, 6, 1, 0.94], [46, 13, 1, 0.86],
+      [48, 0, 1, 0.96], [50, 7, 1, 0.88], [52, 3, 1, 0.94], [54, 10, 1, 0.88],
+      [56, 4, 2, 0.96], [58, 5, 2, 0.94], [60, 6, 2, 0.98], [62, 4, 2, 0.96],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Sparkling crystalline glockenspiel dancing like falling icicles!
+      [0, 14, 2, 0.96], [2, 16, 1, 0.9], [3, 18, 1, 0.94], [4, 21, 2, 1.0], [6, 18, 2, 0.92],
+      [8, 19, 2, 0.96], [10, 18, 2, 0.92], [12, 16, 2, 0.94], [14, 14, 2, 0.92],
+      [16, 16, 2, 0.96], [18, 18, 1, 0.92], [19, 19, 1, 0.94], [20, 21, 2, 1.0], [22, 19, 2, 0.94],
+      [24, 20, 2, 0.98], [26, 18, 2, 0.94], [28, 16, 3, 0.96],
+      [32, 17, 2, 0.96], [34, 19, 2, 0.96], [36, 21, 2, 1.0], [38, 19, 2, 0.94],
+      [40, 19, 2, 0.96], [42, 20, 2, 0.98], [44, 21, 2, 1.0], [46, 23, 2, 1.0],
+      [48, 21, 2, 1.0], [50, 19, 2, 0.96], [52, 18, 2, 0.96], [54, 17, 2, 0.94],
+      [56, 18, 2, 0.98], [58, 16, 2, 0.96], [60, 14, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Brisk 16th-note chiptune pulse arps zipping beneath the ice bells!
+      [0, 7, 1, 0.74, 0, 'square_cartoon'], [1, 9, 1, 0.7, 0, 'square_cartoon'], [2, 11, 1, 0.74, 0, 'square_cartoon'], [3, 14, 1, 0.76, 0, 'square_cartoon'],
+      [4, 11, 1, 0.72, 0, 'square_cartoon'], [5, 9, 1, 0.68, 0, 'square_cartoon'], [6, 11, 1, 0.74, 0, 'square_cartoon'], [7, 14, 1, 0.76, 0, 'square_cartoon'],
+      [8, 12, 1, 0.74, 0, 'square_cartoon'], [9, 14, 1, 0.7, 0, 'square_cartoon'], [10, 16, 1, 0.74, 0, 'square_cartoon'], [11, 12, 1, 0.7, 0, 'square_cartoon'],
+      [12, 14, 1, 0.74, 0, 'square_cartoon'], [13, 11, 1, 0.7, 0, 'square_cartoon'], [14, 9, 1, 0.72, 0, 'square_cartoon'], [15, 11, 1, 0.74, 0, 'square_cartoon'],
+      [16, 9, 1, 0.74, 0, 'square_cartoon'], [17, 11, 1, 0.7, 0, 'square_cartoon'], [18, 13, 1, 0.74, 0, 'square_cartoon'], [19, 16, 1, 0.76, 0, 'square_cartoon'],
+      [20, 13, 1, 0.72, 0, 'square_cartoon'], [21, 11, 1, 0.68, 0, 'square_cartoon'], [22, 9, 1, 0.72, 0, 'square_cartoon'], [23, 11, 1, 0.74, 0, 'square_cartoon'],
+      [24, 13, 1, 0.74, 0, 'square_cartoon'], [25, 15, 1, 0.72, 0, 'square_cartoon'], [26, 16, 1, 0.76, 0, 'square_cartoon'], [27, 13, 1, 0.72, 0, 'square_cartoon'],
+      [28, 11, 1, 0.76, 0, 'square_cartoon'], [29, 13, 1, 0.74, 0, 'square_cartoon'], [30, 14, 1, 0.76, 0, 'square_cartoon'], [31, 16, 1, 0.78, 0, 'square_cartoon'],
+      [32, 10, 1, 0.76, 0, 'square_cartoon'], [33, 12, 1, 0.72, 0, 'square_cartoon'], [34, 14, 1, 0.76, 0, 'square_cartoon'], [35, 17, 1, 0.78, 0, 'square_cartoon'],
+      [36, 14, 1, 0.72, 0, 'square_cartoon'], [37, 12, 1, 0.7, 0, 'square_cartoon'], [38, 10, 1, 0.74, 0, 'square_cartoon'], [39, 14, 1, 0.76, 0, 'square_cartoon'],
+      [40, 12, 1, 0.76, 0, 'square_cartoon'], [41, 14, 1, 0.72, 0, 'square_cartoon'], [42, 16, 1, 0.76, 0, 'square_cartoon'], [43, 19, 1, 0.8, 0, 'square_cartoon'],
+      [44, 13, 1, 0.76, 0, 'square_cartoon'], [45, 15, 1, 0.74, 0, 'square_cartoon'], [46, 17, 1, 0.78, 0, 'square_cartoon'], [47, 20, 1, 0.8, 0, 'square_cartoon'],
+      [48, 14, 1, 0.78, 0, 'square_cartoon'], [49, 11, 1, 0.74, 0, 'square_cartoon'], [50, 9, 1, 0.74, 0, 'square_cartoon'], [51, 11, 1, 0.76, 0, 'square_cartoon'],
+      [52, 10, 1, 0.76, 0, 'square_cartoon'], [53, 12, 1, 0.74, 0, 'square_cartoon'], [54, 14, 1, 0.78, 0, 'square_cartoon'], [55, 10, 1, 0.74, 0, 'square_cartoon'],
+      [56, 11, 1, 0.78, 0, 'square_cartoon'], [57, 13, 1, 0.76, 0, 'square_cartoon'], [58, 14, 1, 0.78, 0, 'square_cartoon'], [59, 16, 1, 0.8, 0, 'square_cartoon'],
+      [60, 18, 1, 0.82, 0, 'square_cartoon'], [61, 16, 1, 0.78, 0, 'square_cartoon'], [62, 14, 1, 0.8, 0, 'square_cartoon'], [63, 11, 1, 0.78, 0, 'square_cartoon'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 3, 0.7], [8, 5, 3, 0.7], [16, 2, 3, 0.7], [24, 6, 3, 0.72],
+      [32, 3, 3, 0.72], [40, 5, 3, 0.72], [48, 0, 3, 0.74], [56, 4, 3, 0.76],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 6 || s === 10 || (bar % 2 === 1 && s === 14)) h += 'K';
+      if (s === 4 || s === 12) h += 'S';
+      h += s === 14 ? 'O' : 'H';
+      if (bar === totalBars - 1 && s >= 13) h += 'ST';
+      return h;
+    }),
+  },
+
+  // ==========================================================================
+  // Wave 2 Bespoke Arrangements — Floor 5 & Finale
+  // (Manor, Arcade, Blitz, Escape Spire, Candy Panic)
+  // ==========================================================================
+
+  // 30. STAGE MANOR — "Velvet Manor Waltz-Dash" (A Harmonic Minor, 148 BPM)
+  // Haunted baroque rock!
+  stage_manor: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Driving baroque-rock gothic bassline
+      [0, 0, 2, 0.98], [2, 0, 1, 0.86], [4, 7, 2, 0.94], [6, 6, 2, 0.92],
+      [8, 4, 2, 0.96], [10, 4, 1, 0.86], [12, 6, 2, 0.94], [14, 4, 2, 0.92],
+      [16, 5, 2, 0.98], [18, 5, 1, 0.86], [20, 7, 2, 0.94], [22, 5, 2, 0.92],
+      [24, 3, 2, 0.96], [26, 2, 2, 0.92], [28, 4, 2, 0.98], [30, 6, 2, 0.96],
+      [32, 0, 2, 0.98], [34, 2, 2, 0.92], [36, 3, 2, 0.96], [38, 4, 2, 0.94],
+      [40, 5, 2, 0.98], [42, 4, 2, 0.94], [44, 3, 2, 0.96], [46, 2, 2, 0.92],
+      [48, 3, 2, 0.98], [50, 5, 2, 0.94], [52, 4, 2, 0.98], [54, 6, 2, 0.96],
+      [56, 7, 2, 1.0], [58, 6, 2, 0.96], [60, 4, 2, 1.0], [62, 6, 2, 0.98],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Virtuosic Castlevania-style haunted pipe-organ baroque rock!
+      [0, 14, 2, 0.98], [2, 13, 1, 0.92], [3, 14, 1, 0.94], [4, 16, 2, 1.0], [6, 14, 1, 0.92], [7, 13, 1, 0.92],
+      [8, 11, 2, 0.96], [10, 13, 2, 0.96], [12, 14, 2, 0.98], [14, 11, 2, 0.94],
+      [16, 12, 2, 0.98], [18, 14, 1, 0.94], [19, 16, 1, 0.96], [20, 19, 2, 1.0], [22, 18, 2, 0.96],
+      [24, 17, 2, 0.98], [26, 16, 2, 0.96], [28, 13, 3, 0.98],
+      [32, 14, 1, 0.98], [33, 16, 1, 0.94], [34, 17, 1, 0.96], [35, 16, 1, 0.94], [36, 17, 2, 1.0], [38, 18, 2, 0.98],
+      [40, 19, 1, 1.0], [41, 18, 1, 0.94], [42, 17, 1, 0.96], [43, 16, 1, 0.94], [44, 17, 2, 0.98], [46, 14, 2, 0.96],
+      [48, 17, 2, 1.0], [50, 19, 2, 1.0], [52, 20, 2, 1.0], [54, 18, 2, 0.98],
+      [56, 21, 2, 1.0], [58, 20, 2, 0.98], [60, 18, 2, 1.0], [62, 20, 2, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Aggressive classical baroque harpsichord counterpoint!
+      [0, 7, 1, 0.8, 0, 'harpsichord'], [1, 11, 1, 0.78, 0, 'harpsichord'], [2, 9, 1, 0.8, 0, 'harpsichord'], [3, 11, 1, 0.8, 0, 'harpsichord'],
+      [6, 11, 1, 0.8, 0, 'harpsichord'], [7, 13, 1, 0.82, 0, 'harpsichord'], [12, 11, 1, 0.82, 0, 'harpsichord'], [13, 13, 1, 0.82, 0, 'harpsichord'],
+      [16, 12, 1, 0.82, 0, 'harpsichord'], [17, 14, 1, 0.8, 0, 'harpsichord'], [22, 14, 1, 0.82, 0, 'harpsichord'], [23, 16, 1, 0.84, 0, 'harpsichord'],
+      [28, 11, 1, 0.84, 0, 'harpsichord'], [29, 13, 1, 0.84, 0, 'harpsichord'], [30, 14, 1, 0.86, 0, 'harpsichord'], [31, 16, 1, 0.88, 0, 'harpsichord'],
+      [36, 10, 1, 0.82, 0, 'harpsichord'], [37, 14, 1, 0.82, 0, 'harpsichord'], [44, 12, 1, 0.84, 0, 'harpsichord'], [45, 14, 1, 0.84, 0, 'harpsichord'],
+      [50, 14, 1, 0.84, 0, 'harpsichord'], [51, 17, 1, 0.86, 0, 'harpsichord'], [56, 14, 1, 0.86, 0, 'harpsichord'], [57, 18, 1, 0.88, 0, 'harpsichord'],
+      [60, 13, 1, 0.88, 0, 'harpsichord'], [61, 16, 1, 0.88, 0, 'harpsichord'], [62, 18, 1, 0.9, 0, 'harpsichord'], [63, 20, 1, 0.92, 0, 'harpsichord'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.84, 'power_fifth'], [4, 0, 2, 0.78, 'harpsichord_clav'], [8, 4, 2, 0.84, 'power_fifth'], [12, 4, 2, 0.8, 'harpsichord_clav'],
+      [16, 5, 2, 0.84, 'power_fifth'], [20, 5, 2, 0.78, 'harpsichord_clav'], [24, 3, 2, 0.84, 'power_fifth'], [28, 4, 3, 0.88, 'power_fifth'],
+      [32, 0, 2, 0.86, 'power_fifth'], [36, 3, 2, 0.84, 'harpsichord_clav'], [40, 5, 2, 0.86, 'power_fifth'], [44, 3, 2, 0.84, 'harpsichord_clav'],
+      [48, 3, 2, 0.88, 'power_fifth'], [52, 4, 2, 0.9, 'power_fifth'], [56, 0, 2, 0.9, 'power_fifth'], [60, 4, 3, 0.94, 'power_fifth'],
+    ]),
+    drums: makeDrumPattern('boss_thrash', 64),
+  },
+
+  // 31. STAGE ARCADE — "Glitchy Kid-Zone Mania" (C Harmonic Minor, 156 BPM)
+  // Eerie music-box (Bars 0–1) -> Sudden PUNCHY SYNTH SHIFT (Bars 2–3)!
+  stage_arcade: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Bars 0–1: Sparse eerie tiptoe music-box bass
+      [0, 0, 4, 0.58, 0, undefined, 'spooky_creep'], [8, 4, 4, 0.56, 0, undefined, 'spooky_creep'],
+      [16, 5, 4, 0.58, 0, undefined, 'spooky_creep'], [24, 4, 3, 0.62, 0, undefined, 'spooky_creep'],
+      // Glitch ramp steps 28–31!
+      [28, 4, 1, 0.85, 0, undefined, 'acid_bounce'], [29, 5, 1, 0.9, 0, undefined, 'acid_bounce'],
+      [30, 6, 1, 0.95, 0, undefined, 'acid_bounce'], [31, 7, 1, 1.0, 0, undefined, 'acid_bounce'],
+      // Bars 2–3: EXPLOSIVE PUNCHY SYNTH SHIFT!
+      [32, 0, 1, 1.0, 0, undefined, 'acid_bounce'], [34, 7, 1, 0.92, 0, undefined, 'acid_bounce'],
+      [36, 0, 1, 1.0, 0, undefined, 'acid_bounce'], [38, 6, 1, 0.94, 0, undefined, 'acid_bounce'],
+      [40, 3, 1, 1.0, 0, undefined, 'acid_bounce'], [42, 10, 1, 0.92, 0, undefined, 'acid_bounce'],
+      [44, 4, 2, 0.98, 0, undefined, 'acid_bounce'], [46, 6, 2, 0.96, 0, undefined, 'acid_bounce'],
+      [48, 5, 1, 1.0, 0, undefined, 'acid_bounce'], [50, 12, 1, 0.92, 0, undefined, 'acid_bounce'],
+      [52, 4, 1, 1.0, 0, undefined, 'acid_bounce'], [54, 11, 1, 0.94, 0, undefined, 'acid_bounce'],
+      [56, 3, 2, 1.0, 0, undefined, 'acid_bounce'], [58, 4, 2, 0.98, 0, undefined, 'acid_bounce'],
+      [60, 6, 2, 1.0, 0, undefined, 'acid_bounce'], [62, 4, 2, 1.0, 0, undefined, 'acid_bounce'],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Bars 0–1: Fragile uncanny wind-up music-box lullaby (with eerie sour glitch at step 26!)
+      [0, 14, 2, 0.84, 0, 'music_box'], [2, 16, 2, 0.8, 0, 'music_box'], [4, 18, 2, 0.86, 0, 'music_box'], [6, 16, 2, 0.78, 0, 'music_box'],
+      [8, 15, 2, 0.84, 0, 'music_box'], [10, 14, 2, 0.8, 0, 'music_box'], [12, 13, 3, 0.86, 0, 'music_box'],
+      [16, 14, 2, 0.84, 0, 'music_box'], [18, 17, 2, 0.82, 0, 'music_box'], [20, 19, 2, 0.88, 0, 'music_box'], [22, 18, 2, 0.82, 0, 'music_box'],
+      [24, 16, 2, 0.84, 0, 'music_box'], [26, 15, 2, 0.9, -1, 'music_box'], // eerie bent music-box tine!
+      [28, 13, 1, 0.95, 0, 'square_cartoon'], [29, 14, 1, 0.98, 0, 'square_cartoon'], [30, 16, 1, 1.0, 0, 'screech_lead'], [31, 18, 1, 1.0, 0, 'screech_lead'],
+      // Bars 2–3: BAM! PUNCHY ARCADE SYNTH SHIFT!
+      [32, 14, 2, 1.0, 0, 'square_cartoon'], [34, 16, 1, 0.94, 0, 'square_cartoon'], [35, 18, 1, 0.98, 0, 'square_cartoon'],
+      [36, 21, 2, 1.0, 0, 'screech_lead'], [38, 20, 2, 0.98, 0, 'screech_lead'],
+      [40, 17, 2, 1.0, 0, 'square_cartoon'], [42, 19, 2, 0.98, 0, 'square_cartoon'], [44, 20, 2, 1.0, 0, 'screech_lead'], [46, 18, 2, 0.96, 0, 'square_cartoon'],
+      [48, 19, 2, 1.0, 0, 'screech_lead'], [50, 18, 1, 0.96, 0, 'square_cartoon'], [51, 19, 1, 0.98, 0, 'square_cartoon'],
+      [52, 21, 2, 1.0, 0, 'screech_lead'], [54, 20, 2, 0.98, 0, 'screech_lead'],
+      [56, 18, 2, 1.0, 0, 'square_cartoon'], [58, 20, 2, 1.0, 0, 'screech_lead'], [60, 21, 2, 1.0, 0, 'screech_lead'], [62, 18, 2, 0.98, 0, 'square_cartoon'],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Bars 0–1: Faint ghostly high music-box echoes
+      [4, 21, 2, 0.56, 0, 'glockenspiel'], [12, 20, 2, 0.56, 0, 'glockenspiel'], [20, 22, 2, 0.58, 0, 'glockenspiel'],
+      // Bars 2–3: Frantic arcade synth laser arps!
+      [32, 7, 1, 0.86, 0, 'square_cartoon'], [34, 11, 1, 0.86, 0, 'square_cartoon'], [36, 14, 1, 0.9, 0, 'square_cartoon'], [38, 13, 1, 0.88, 0, 'square_cartoon'],
+      [40, 10, 1, 0.88, 0, 'square_cartoon'], [42, 14, 1, 0.88, 0, 'square_cartoon'], [44, 13, 1, 0.9, 0, 'square_cartoon'], [46, 11, 1, 0.88, 0, 'square_cartoon'],
+      [48, 12, 1, 0.9, 0, 'square_cartoon'], [50, 16, 1, 0.9, 0, 'square_cartoon'], [52, 13, 1, 0.92, 0, 'square_cartoon'], [54, 16, 1, 0.9, 0, 'square_cartoon'],
+      [56, 14, 1, 0.92, 0, 'square_cartoon'], [58, 16, 1, 0.92, 0, 'square_cartoon'], [60, 18, 2, 0.95, 0, 'brass_punch'], [62, 20, 2, 0.95, 0, 'brass_punch'],
+    ]),
+    chords: makeChordTrack(64, [
+      // Quiet music-box chords in bars 0–1, slamming power-fifths in bars 2–3!
+      [0, 0, 6, 0.48, 'marimba_arp'], [8, 4, 6, 0.48, 'marimba_arp'],
+      [16, 5, 6, 0.5, 'marimba_arp'], [24, 4, 4, 0.52, 'marimba_arp'],
+      [32, 0, 2, 0.9, 'power_fifth'], [36, 0, 2, 0.88, 'power_fifth'], [40, 3, 2, 0.9, 'power_fifth'], [44, 4, 2, 0.92, 'power_fifth'],
+      [48, 5, 2, 0.92, 'power_fifth'], [52, 4, 2, 0.92, 'power_fifth'], [56, 3, 2, 0.94, 'power_fifth'], [60, 4, 3, 0.96, 'power_fifth'],
+    ]),
+    drums: makeCustomDrumPattern(64, (step, _bar, s) => {
+      // Bars 0–1 (steps 0–27): Creepy sparse toy clockwork ticking
+      if (step < 28) {
+        let h = '';
+        if (s === 0 || s === 8) h += 'R';
+        if (s === 4 || s === 12) h += 'H';
+        return h;
+      }
+      // Steps 28–31: Frantic glitch-shift fill!
+      if (step < 32) return step % 2 === 0 ? 'ST' : 'SK';
+      // Bars 2–3 (steps 32–63): Full-throttle punchy arcade synth drums!
+      let h = '';
+      if (s === 0 || s === 3 || s === 8 || s === 10) h += 'K';
+      if (s === 4 || s === 12) h += 'SC';
+      if (s % 2 === 0) h += s === 6 || s === 14 ? 'O' : 'H';
+      if (s === 2 || s === 10) h += 'B';
+      if (step >= 60) h += 'ST';
+      return h;
+    }),
+  },
+
+  // 32. STAGE BLITZ — "Countdown Blitzkrieg" (E Phrygian, 168 BPM, straight 0.0)
+  // Relentless military snare march + adrenaline war-horn synth!
+  stage_blitz: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Relentless armored-tank military gallop!
+      [0, 0, 1, 1.0], [2, 0, 1, 0.92], [3, 0, 1, 0.9], [4, 0, 2, 0.98], [6, 1, 2, 0.96],
+      [8, 0, 1, 1.0], [10, 0, 1, 0.92], [11, 0, 1, 0.9], [12, 6, 2, 0.98], [14, 1, 2, 0.98],
+      [16, 0, 1, 1.0], [18, 0, 1, 0.92], [19, 0, 1, 0.9], [20, 4, 2, 0.98], [22, 3, 2, 0.96],
+      [24, 1, 1, 1.0], [26, 1, 1, 0.92], [27, 1, 1, 0.9], [28, 0, 2, 0.98], [30, 6, 2, 0.98],
+      [32, 5, 1, 1.0], [34, 5, 1, 0.92], [35, 5, 1, 0.9], [36, 4, 2, 0.98], [38, 3, 2, 0.96],
+      [40, 1, 1, 1.0], [42, 1, 1, 0.92], [43, 1, 1, 0.9], [44, 4, 2, 0.98], [46, 5, 2, 0.98],
+      [48, 0, 1, 1.0], [50, 1, 1, 0.96], [52, 2, 2, 0.98], [54, 4, 2, 0.98],
+      [56, 5, 2, 1.0], [58, 4, 2, 1.0], [60, 1, 2, 1.0], [62, 4, 2, 1.0],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Towering adrenaline war-horn synth assault!
+      [0, 7, 4, 1.0], [4, 8, 2, 0.98], [6, 7, 2, 0.96], [8, 11, 4, 1.0], [12, 8, 2, 0.98], [14, 7, 2, 0.96],
+      [16, 11, 3, 1.0], [20, 12, 2, 0.98], [22, 11, 2, 0.96], [24, 8, 4, 1.0], [28, 7, 2, 0.98], [30, 6, 2, 0.98],
+      [32, 12, 3, 1.0], [36, 14, 2, 1.0], [38, 12, 2, 0.98], [40, 15, 3, 1.0], [44, 14, 2, 1.0], [46, 12, 2, 0.98],
+      [48, 14, 2, 1.0], [50, 15, 2, 1.0], [52, 16, 2, 1.0], [54, 18, 2, 1.0],
+      [56, 15, 2, 1.0], [58, 14, 2, 1.0], [60, 15, 2, 1.0], [62, 14, 2, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Piercing high-adrenaline battlefield siren-synth counter-riff
+      [2, 14, 1, 0.82, 0, 'screech_lead'], [3, 15, 1, 0.84, 0, 'screech_lead'], [6, 18, 2, 0.86, 0, 'screech_lead'],
+      [10, 15, 1, 0.84, 0, 'screech_lead'], [11, 14, 1, 0.82, 0, 'screech_lead'], [14, 15, 2, 0.86, 0, 'screech_lead'],
+      [18, 18, 1, 0.86, 0, 'screech_lead'], [19, 19, 1, 0.88, 0, 'screech_lead'], [26, 15, 2, 0.86, 0, 'screech_lead'],
+      [34, 19, 1, 0.88, 0, 'screech_lead'], [35, 21, 1, 0.9, 0, 'screech_lead'], [42, 22, 2, 0.9, 0, 'screech_lead'],
+      [50, 21, 1, 0.9, 0, 'screech_lead'], [51, 22, 1, 0.92, 0, 'screech_lead'], [58, 21, 2, 0.92, 0, 'screech_lead'], [60, 22, 3, 0.95, 0, 'screech_lead'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 2, 0.9], [4, 1, 2, 0.88], [8, 0, 2, 0.9], [12, 1, 2, 0.9],
+      [16, 0, 2, 0.9], [20, 4, 2, 0.88], [24, 1, 2, 0.9], [28, 6, 2, 0.9],
+      [32, 5, 2, 0.92], [36, 4, 2, 0.9], [40, 1, 2, 0.92], [44, 4, 2, 0.92],
+      [48, 0, 2, 0.94], [52, 2, 2, 0.94], [56, 5, 2, 0.95], [60, 1, 3, 0.96],
+    ]),
+    drums: makeDrumPattern('military_march', 64),
+  },
+
+  // 33. ESCAPE SPIRE — "Crumbling Spire Finale" (A Minor, 182 BPM, 8 bars = 128 steps!)
+  // Heroic bittersweet high-tempo finale anthem!
+  escape_spire: {
+    steps: 128,
+    bass: makeNoteTrack(128, [
+      // Bars 0–3: Am (0) -> F (5) -> C (2) -> G (6) (bittersweet soaring verse)
+      [0, 0, 1, 0.98], [2, 7, 1, 0.9], [4, 0, 1, 0.98], [6, 7, 1, 0.9],
+      [8, 0, 1, 0.98], [10, 7, 1, 0.9], [12, 0, 2, 0.96], [14, 6, 2, 0.94],
+      [16, 5, 1, 0.98], [18, 12, 1, 0.9], [20, 5, 1, 0.98], [22, 12, 1, 0.9],
+      [24, 5, 1, 0.98], [26, 12, 1, 0.9], [28, 5, 2, 0.96], [30, 4, 2, 0.94],
+      [32, 2, 1, 0.98], [34, 9, 1, 0.9], [36, 2, 1, 0.98], [38, 9, 1, 0.9],
+      [40, 2, 1, 0.98], [42, 9, 1, 0.9], [44, 3, 2, 0.96], [46, 4, 2, 0.96],
+      [48, 6, 1, 0.98], [50, 13, 1, 0.9], [52, 6, 1, 0.98], [54, 13, 1, 0.9],
+      [56, 6, 1, 0.98], [58, 5, 1, 0.94], [60, 4, 2, 0.98], [62, 6, 2, 0.96],
+      // Bars 4–7: F (5) -> G (6) -> Am (0) -> E7 (4) (heroic emotional climax!)
+      [64, 5, 1, 1.0], [66, 12, 1, 0.92], [68, 5, 1, 1.0], [70, 12, 1, 0.92],
+      [72, 5, 1, 1.0], [74, 12, 1, 0.92], [76, 5, 2, 0.98], [78, 6, 2, 0.98],
+      [80, 6, 1, 1.0], [82, 13, 1, 0.92], [84, 6, 1, 1.0], [86, 13, 1, 0.92],
+      [88, 6, 1, 1.0], [90, 13, 1, 0.92], [92, 6, 2, 0.98], [94, 7, 2, 0.98],
+      [96, 0, 1, 1.0], [98, 7, 1, 0.92], [100, 0, 1, 1.0], [102, 7, 1, 0.92],
+      [104, 2, 1, 1.0], [106, 9, 1, 0.92], [108, 3, 2, 0.98], [110, 4, 2, 0.98],
+      [112, 4, 1, 1.0], [114, 11, 1, 0.94], [116, 4, 1, 1.0], [118, 11, 1, 0.94],
+      [120, 4, 2, 1.0], [122, 5, 2, 1.0], [124, 6, 2, 1.0, 1], [126, 4, 2, 1.0],
+    ]),
+    lead: makeNoteTrack(128, [
+      // Bars 0–3: Bittersweet yearning heroic trumpet theme
+      [0, 14, 3, 0.98], [4, 16, 2, 0.96], [6, 18, 2, 0.98], [8, 16, 3, 0.96], [12, 14, 2, 0.94], [14, 13, 2, 0.94],
+      [16, 12, 3, 0.98], [20, 14, 2, 0.96], [22, 16, 2, 0.98], [24, 14, 3, 0.96], [28, 12, 2, 0.94], [30, 11, 2, 0.94],
+      [32, 9, 3, 0.98], [36, 11, 2, 0.96], [38, 13, 2, 0.98], [40, 14, 3, 1.0], [44, 16, 2, 0.98], [46, 14, 2, 0.96],
+      [48, 13, 4, 1.0], [52, 11, 2, 0.96], [54, 13, 2, 0.96], [56, 14, 3, 0.98], [60, 16, 2, 1.0], [62, 18, 2, 1.0],
+      // Bars 4–7: Soaring triumphant climax octave lift!
+      [64, 19, 3, 1.0], [68, 18, 2, 0.98], [70, 16, 2, 0.98], [72, 19, 3, 1.0], [76, 18, 2, 0.98], [78, 16, 2, 0.98],
+      [80, 20, 3, 1.0], [84, 19, 2, 0.98], [86, 18, 2, 0.98], [88, 20, 3, 1.0], [92, 21, 2, 1.0], [94, 20, 2, 1.0],
+      [96, 21, 4, 1.0], [100, 19, 2, 0.98], [102, 18, 2, 0.98], [104, 21, 2, 1.0], [106, 20, 2, 1.0], [108, 19, 2, 1.0], [110, 18, 2, 0.98],
+      [112, 18, 3, 1.0], [116, 19, 2, 1.0], [118, 20, 2, 1.0, 1], [120, 21, 3, 1.0], [124, 20, 2, 1.0, 1], [126, 18, 2, 1.0],
+    ]),
+    counter: makeNoteTrack(128, [
+      // Bars 0–3: Bittersweet glistening glockenspiel chimes
+      [0, 21, 2, 0.72, 0, 'glockenspiel'], [4, 18, 2, 0.7, 0, 'glockenspiel'], [8, 21, 2, 0.72, 0, 'glockenspiel'], [12, 23, 2, 0.74, 0, 'glockenspiel'],
+      [16, 19, 2, 0.72, 0, 'glockenspiel'], [20, 21, 2, 0.72, 0, 'glockenspiel'], [24, 19, 2, 0.72, 0, 'glockenspiel'], [28, 18, 2, 0.7, 0, 'glockenspiel'],
+      [32, 16, 2, 0.74, 0, 'glockenspiel'], [36, 18, 2, 0.74, 0, 'glockenspiel'], [40, 21, 2, 0.76, 0, 'glockenspiel'], [44, 23, 2, 0.76, 0, 'glockenspiel'],
+      [48, 20, 2, 0.76, 0, 'glockenspiel'], [52, 18, 2, 0.74, 0, 'glockenspiel'], [56, 20, 2, 0.78, 0, 'glockenspiel'], [60, 23, 2, 0.8, 0, 'glockenspiel'],
+      // Bars 4–7: Soaring harmonizing heroic finale synth lead!
+      [64, 12, 3, 0.86, 0, 'screech_lead'], [68, 14, 2, 0.86, 0, 'screech_lead'], [72, 12, 3, 0.86, 0, 'screech_lead'], [76, 14, 2, 0.86, 0, 'screech_lead'],
+      [80, 13, 3, 0.88, 0, 'screech_lead'], [84, 14, 2, 0.88, 0, 'screech_lead'], [88, 16, 3, 0.9, 0, 'screech_lead'], [92, 18, 2, 0.9, 0, 'screech_lead'],
+      [96, 14, 4, 0.92, 0, 'screech_lead'], [104, 16, 2, 0.9, 0, 'screech_lead'], [108, 17, 2, 0.92, 0, 'screech_lead'],
+      [112, 11, 3, 0.92, 0, 'screech_lead'], [116, 13, 2, 0.92, 0, 'screech_lead'], [120, 14, 3, 0.95, 0, 'screech_lead'], [124, 13, 3, 0.95, 1, 'screech_lead'],
+    ]),
+    chords: makeChordTrack(128, [
+      [0, 0, 6, 0.84, 'organ_swell'], [8, 0, 6, 0.8, 'brass_stab'],
+      [16, 5, 6, 0.84, 'organ_swell'], [24, 5, 6, 0.8, 'brass_stab'],
+      [32, 2, 6, 0.86, 'organ_swell'], [40, 2, 6, 0.82, 'brass_stab'],
+      [48, 6, 6, 0.86, 'organ_swell'], [56, 6, 6, 0.86, 'brass_stab'],
+      [64, 5, 4, 0.9, 'brass_stab'], [70, 5, 4, 0.86, 'brass_stab'], [76, 5, 4, 0.88, 'brass_stab'],
+      [80, 6, 4, 0.9, 'brass_stab'], [86, 6, 4, 0.88, 'brass_stab'], [92, 6, 4, 0.9, 'brass_stab'],
+      [96, 0, 4, 0.92, 'brass_stab'], [104, 2, 4, 0.9, 'brass_stab'], [110, 4, 2, 0.9, 'brass_stab'],
+      [112, 4, 4, 0.94, 'brass_stab'], [120, 4, 6, 0.96, 'brass_stab'],
+    ]),
+    drums: makeCustomDrumPattern(128, (_step, bar, s) => {
+      let h = '';
+      if (s === 0 || s === 2 || s === 8 || s === 10 || (bar >= 4 && s === 14)) h += 'K';
+      if (s === 4 || s === 12) h += 'SC';
+      if (s % 2 === 0) h += s === 6 || s === 14 ? 'O' : 'H';
+      if (bar === 3 && s >= 12) h += 'ST';
+      if (bar === 7 && s >= 8) h += s % 2 === 0 ? 'ST' : 'KT';
+      return h;
+    }),
+  },
+
+  // 34. CANDY PANIC — "Sugar Rush Pandemonium" (D Hungarian Minor, 166 BPM)
+  // Spooky high-speed arcade rush!
+  candy_panic: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Hyper-speed spooky oompah arcade bounce!
+      [0, 0, 2, 0.96], [2, 7, 1, 0.86], [4, 4, 2, 0.92], [6, 7, 1, 0.86],
+      [8, 0, 2, 0.96], [10, 3, 2, 0.92], [12, 4, 2, 0.96], [14, 6, 2, 0.94],
+      [16, 5, 2, 0.96], [18, 12, 1, 0.86], [20, 4, 2, 0.94], [22, 11, 1, 0.86],
+      [24, 3, 2, 0.96], [26, 2, 2, 0.92], [28, 4, 2, 0.96], [30, 6, 2, 0.96],
+      [32, 0, 2, 0.96], [34, 7, 1, 0.88], [36, 2, 2, 0.94], [38, 9, 1, 0.88],
+      [40, 3, 2, 0.96], [42, 10, 1, 0.88], [44, 4, 2, 0.98], [46, 6, 2, 0.96],
+      [48, 5, 2, 0.98], [50, 4, 2, 0.96], [52, 3, 2, 0.96], [54, 2, 2, 0.94],
+      [56, 4, 2, 0.98], [58, 6, 2, 0.98], [60, 7, 2, 1.0], [62, 6, 2, 0.98],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Blazing spooky candy-arcade 16th-note chiptune & haunted carnival hooks!
+      [0, 14, 1, 0.98], [1, 16, 1, 0.92], [2, 17, 1, 0.96], [3, 16, 1, 0.92], [4, 14, 2, 0.98], [6, 13, 2, 0.96],
+      [8, 11, 1, 0.96], [9, 13, 1, 0.92], [10, 14, 2, 0.98], [12, 16, 2, 0.98], [14, 13, 2, 0.96],
+      [16, 19, 1, 1.0, 0, 'accordion_bouncy'], [17, 18, 1, 0.94, 0, 'accordion_bouncy'], [18, 17, 2, 0.98, 0, 'accordion_bouncy'],
+      [20, 16, 2, 0.96, 0, 'accordion_bouncy'], [22, 14, 2, 0.94, 0, 'accordion_bouncy'],
+      [24, 17, 1, 0.98], [25, 16, 1, 0.94], [26, 14, 1, 0.96], [27, 13, 1, 0.94], [28, 11, 2, 0.98], [30, 13, 2, 0.98],
+      [32, 14, 1, 0.98], [33, 13, 1, 0.92], [34, 14, 1, 0.96], [35, 16, 1, 0.96], [36, 17, 2, 1.0], [38, 19, 2, 1.0],
+      [40, 20, 2, 1.0, 0, 'accordion_bouncy'], [42, 19, 2, 0.98, 0, 'accordion_bouncy'], [44, 18, 2, 1.0, 0, 'accordion_bouncy'], [46, 17, 2, 0.98, 0, 'accordion_bouncy'],
+      [48, 21, 1, 1.0], [49, 20, 1, 0.96], [50, 19, 1, 0.98], [51, 18, 1, 0.96], [52, 17, 2, 1.0], [54, 16, 2, 0.98],
+      [56, 18, 2, 1.0], [58, 20, 2, 1.0], [60, 21, 2, 1.0], [62, 20, 2, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Sparkling sugar-rush xylophone chimes
+      [4, 21, 1, 0.78, 0, 'glockenspiel'], [7, 20, 1, 0.78, 0, 'glockenspiel'], [12, 21, 1, 0.8, 0, 'glockenspiel'],
+      [20, 23, 1, 0.8, 0, 'glockenspiel'], [28, 20, 1, 0.82, 0, 'glockenspiel'], [36, 24, 1, 0.82, 0, 'glockenspiel'],
+      [44, 25, 1, 0.84, 0, 'glockenspiel'], [52, 24, 1, 0.84, 0, 'glockenspiel'], [60, 28, 2, 0.88, 0, 'glockenspiel'],
+    ]),
+    chords: makeChordTrack(64, [
+      [2, 0, 2, 0.74], [6, 0, 2, 0.72], [10, 4, 2, 0.76], [14, 4, 2, 0.76],
+      [18, 5, 2, 0.76], [22, 4, 2, 0.76], [26, 3, 2, 0.76], [30, 4, 2, 0.8],
+      [34, 0, 2, 0.78], [42, 3, 2, 0.8], [50, 5, 2, 0.8], [58, 4, 2, 0.84],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s, totalBars) => {
+      let h = '';
+      if (s === 0 || s === 8 || (bar % 2 === 1 && s === 14)) h += 'K';
+      if (s === 4 || s === 12 || (bar % 2 === 1 && s === 15)) h += 'SC';
+      if (s % 2 === 0) h += s === 14 ? 'O' : 'H';
+      if (s === 3 || s === 11) h += 'R';
+      if (s === 6) h += 'B';
+      if (bar === totalBars - 1 && s >= 12) h += 'ST';
+      return h;
+    }),
+  },
+
+  // ==========================================================================
+  // Wave 2 Bespoke Arrangements — Bosses 2–5
+  // (Boss Cheddar, Boss Static, Boss Doppel, Boss Mega-Crust)
+  // ==========================================================================
+
+  // 35. BOSS CHEDDAR — "Duel at Cheddar Gulch" (A Phrygian Dominant, 160 BPM, 8 bars = 128 steps!)
+  // Dramatic spaghetti-western brass & whistling showdown theme!
+  boss_cheddar: {
+    steps: 128,
+    bass: makeNoteTrack(128, [
+      // Relentless spaghetti-western frontier gallop!
+      // Bars 0–1: A (0) -> Bb (1) -> Gm (6) -> A (0)
+      [0, 0, 1, 0.98], [3, 0, 1, 0.9], [4, 0, 2, 0.96], [8, 0, 1, 0.98], [11, 0, 1, 0.9], [12, 1, 2, 0.96], [14, 0, 2, 0.94],
+      [16, 6, 1, 0.98], [19, 6, 1, 0.9], [20, 6, 2, 0.96], [24, 5, 1, 0.98], [27, 4, 1, 0.92], [28, 1, 2, 0.96], [30, 0, 2, 0.96],
+      // Bars 2–3: Dramatic brass surge A (0) -> Dm (3) -> Bb (1) -> A (0)
+      [32, 0, 1, 1.0], [35, 0, 1, 0.92], [36, 4, 2, 0.96], [40, 3, 1, 1.0], [43, 3, 1, 0.92], [44, 4, 2, 0.96], [46, 5, 2, 0.96],
+      [48, 1, 1, 1.0], [51, 1, 1, 0.92], [52, 4, 2, 0.96], [56, 0, 2, 1.0], [58, 6, 2, 0.96], [60, 1, 2, 0.98], [62, 0, 2, 0.98],
+      // Bars 4–5: High-noon tension climb Dm (3) -> C (2) -> Bb (1) -> A (0)
+      [64, 3, 1, 1.0], [67, 3, 1, 0.92], [68, 3, 2, 0.96], [72, 2, 1, 1.0], [75, 2, 1, 0.92], [76, 2, 2, 0.96], [78, 3, 2, 0.96],
+      [80, 1, 1, 1.0], [83, 1, 1, 0.92], [84, 1, 2, 0.98], [88, 0, 1, 1.0], [91, 0, 1, 0.92], [92, 4, 2, 0.98], [94, 6, 2, 0.98],
+      // Bars 6–7: Blazing quickdraw shootout climax!
+      [96, 0, 1, 1.0], [98, 4, 1, 0.94], [100, 7, 2, 1.0], [104, 6, 1, 1.0], [106, 5, 1, 0.94], [108, 4, 2, 0.98], [110, 3, 2, 0.96],
+      [112, 1, 2, 1.0], [114, 3, 2, 0.98], [116, 4, 2, 1.0], [118, 5, 2, 0.98], [120, 6, 2, 1.0], [122, 1, 2, 1.0], [124, 0, 3, 1.0],
+    ]),
+    lead: makeNoteTrack(128, [
+      // Bars 0–1: Iconic lonesome spaghetti-western WHISTLING standoff motif!
+      [0, 14, 3, 0.96, 0, 'whistle_flute'], [4, 11, 2, 0.92, 0, 'whistle_flute'], [6, 14, 2, 0.96, 0, 'whistle_flute'],
+      [8, 15, 4, 0.98, 0, 'whistle_flute'], [12, 14, 2, 0.94, 0, 'whistle_flute'], [14, 11, 2, 0.92, 0, 'whistle_flute'],
+      [16, 13, 3, 0.96, 0, 'whistle_flute'], [20, 11, 2, 0.92, 0, 'whistle_flute'], [22, 9, 2, 0.94, 0, 'whistle_flute'],
+      [24, 8, 4, 0.98, 0, 'whistle_flute'], [28, 9, 2, 0.96, 0, 'whistle_flute'], [30, 7, 2, 0.96, 0, 'whistle_flute'],
+      // Bars 2–3: DRAMATIC SPAGHETTI-WESTERN BRASS ROAR!
+      [32, 14, 2, 1.0, 0, 'brass_punch'], [34, 15, 1, 0.96, 0, 'brass_punch'], [35, 16, 1, 0.98, 0, 'brass_punch'],
+      [36, 18, 3, 1.0, 0, 'brass_punch'], [40, 17, 2, 1.0, 0, 'brass_punch'], [42, 16, 2, 0.96, 0, 'brass_punch'], [44, 14, 3, 1.0, 0, 'brass_punch'],
+      [48, 15, 2, 1.0, 0, 'brass_punch'], [50, 14, 2, 0.96, 0, 'brass_punch'], [52, 12, 2, 0.98, 0, 'brass_punch'], [54, 11, 2, 0.96, 0, 'brass_punch'],
+      [56, 14, 2, 1.0, 0, 'brass_punch'], [58, 15, 2, 1.0, 0, 'brass_punch'], [60, 14, 4, 1.0, 0, 'brass_punch'],
+      // Bars 4–5: Whistle vs. Brass showdown duel!
+      [64, 17, 3, 0.98, 0, 'whistle_flute'], [68, 19, 2, 0.98, 0, 'whistle_flute'], [70, 17, 2, 0.96, 0, 'whistle_flute'],
+      [72, 16, 3, 0.98, 0, 'whistle_flute'], [76, 17, 2, 0.96, 0, 'whistle_flute'], [78, 16, 2, 0.94, 0, 'whistle_flute'],
+      [80, 15, 2, 1.0, 0, 'brass_punch'], [82, 16, 2, 1.0, 0, 'brass_punch'], [84, 18, 3, 1.0, 0, 'brass_punch'],
+      [88, 16, 2, 1.0, 0, 'brass_punch'], [90, 15, 2, 0.98, 0, 'brass_punch'], [92, 14, 3, 1.0, 0, 'brass_punch'],
+      // Bars 6–7: All-out blazing frontier quickdraw brass anthem!
+      [96, 18, 2, 1.0, 0, 'brass_punch'], [98, 18, 1, 0.96, 0, 'brass_punch'], [99, 19, 1, 0.98, 0, 'brass_punch'],
+      [100, 21, 3, 1.0, 0, 'brass_punch'], [104, 20, 2, 1.0, 0, 'brass_punch'], [106, 19, 2, 0.98, 0, 'brass_punch'], [108, 18, 3, 1.0, 0, 'brass_punch'],
+      [112, 15, 2, 1.0, 0, 'brass_punch'], [114, 16, 2, 1.0, 0, 'brass_punch'], [116, 18, 2, 1.0, 0, 'brass_punch'], [118, 19, 2, 1.0, 0, 'brass_punch'],
+      [120, 21, 2, 1.0, 0, 'brass_punch'], [122, 19, 2, 1.0, 0, 'brass_punch'], [124, 21, 4, 1.0, 0, 'brass_punch'],
+    ]),
+    counter: makeNoteTrack(128, [
+      // Twangy frontier guitar/banjo accents + high whistle harmonies!
+      [2, 7, 1, 0.82, 0, 'twang_banjo'], [7, 9, 1, 0.82, 0, 'twang_banjo'], [14, 8, 2, 0.84, 0, 'twang_banjo'],
+      [18, 6, 1, 0.82, 0, 'twang_banjo'], [23, 8, 1, 0.84, 0, 'twang_banjo'], [30, 9, 2, 0.86, 0, 'twang_banjo'],
+      [36, 11, 2, 0.86, 0, 'twang_banjo'], [44, 10, 2, 0.86, 0, 'twang_banjo'],
+      [52, 8, 2, 0.86, 0, 'twang_banjo'], [60, 21, 3, 0.88, 0, 'whistle_flute'],
+      [68, 10, 2, 0.86, 0, 'twang_banjo'], [76, 9, 2, 0.86, 0, 'twang_banjo'],
+      [84, 15, 2, 0.88, 0, 'whistle_flute'], [92, 21, 3, 0.9, 0, 'whistle_flute'],
+      [100, 14, 2, 0.9, 0, 'twang_banjo'], [108, 11, 2, 0.9, 0, 'twang_banjo'],
+      [116, 22, 2, 0.92, 0, 'whistle_flute'], [120, 23, 2, 0.94, 0, 'whistle_flute'], [124, 21, 4, 0.96, 0, 'whistle_flute'],
+    ]),
+    chords: makeChordTrack(128, [
+      [0, 0, 2, 0.84], [8, 0, 2, 0.8], [12, 1, 2, 0.84],
+      [16, 6, 2, 0.84], [24, 5, 2, 0.82], [28, 1, 2, 0.86],
+      [32, 0, 2, 0.88], [40, 3, 2, 0.88], [48, 1, 2, 0.88], [56, 0, 3, 0.9],
+      [64, 3, 2, 0.88], [72, 2, 2, 0.88], [80, 1, 2, 0.9], [88, 0, 3, 0.9],
+      [96, 0, 2, 0.92], [104, 6, 2, 0.92], [112, 1, 2, 0.94], [120, 6, 2, 0.94], [124, 0, 4, 0.98],
+    ]),
+    drums: makeDrumPattern('desert_cowbell', 128),
+  },
+
+  // 36. BOSS STATIC — "Static Signal Overload" (C Mixolydian, 172 BPM, swing 0.09)
+  // Hyperactive slapstick wah-funk & chaotic breaks!
+  boss_static: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Elastic rubbery slapstick auto-wah funk bass bouncing across octaves!
+      [0, 0, 1, 0.98], [2, 7, 1, 0.92], [3, 6, 1, 0.9], [5, 0, 1, 0.94], [6, 4, 2, 0.94],
+      [8, 6, 1, 0.98], [10, 13, 1, 0.92], [12, 4, 1, 0.96], [13, 3, 1, 0.92], [14, 2, 2, 0.94],
+      [16, 0, 1, 0.98], [18, 7, 1, 0.92], [20, 3, 1, 0.96], [22, 10, 1, 0.92],
+      [24, 4, 1, 0.98], [26, 11, 1, 0.92], [28, 6, 2, 0.96], [30, 4, 2, 0.94],
+      [32, 3, 1, 0.98], [34, 10, 1, 0.92], [35, 9, 1, 0.9], [37, 3, 1, 0.94], [38, 5, 2, 0.94],
+      [40, 4, 1, 0.98], [42, 11, 1, 0.92], [44, 6, 1, 0.96], [46, 7, 2, 0.96],
+      [48, 0, 1, 1.0], [50, 6, 1, 0.96], [52, 5, 1, 0.96], [54, 4, 1, 0.96],
+      [56, 3, 1, 0.98], [58, 2, 1, 0.96], [60, 4, 2, 1.0], [62, 6, 2, 0.98],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Hyperactive slapstick wah-funk & zany cartoon square boings!
+      [0, 7, 1, 0.98], [2, 10, 1, 0.96, -1], [3, 11, 2, 1.0], [6, 13, 1, 0.96], [7, 14, 1, 1.0],
+      [8, 13, 2, 0.98], [10, 11, 1, 0.94], [11, 10, 1, 0.92, -1], [12, 9, 2, 0.96, 0, 'square_cartoon'], [14, 7, 2, 0.96, 0, 'square_cartoon'],
+      [16, 14, 1, 1.0], [18, 13, 1, 0.96], [19, 14, 1, 0.98], [20, 16, 2, 1.0], [22, 13, 2, 0.96],
+      [24, 14, 1, 0.98, 0, 'square_cartoon'], [25, 15, 1, 0.96, 0, 'square_cartoon'], [26, 16, 1, 0.98, 0, 'square_cartoon'], [27, 17, 1, 1.0, 0, 'square_cartoon'],
+      [28, 18, 2, 1.0], [30, 14, 2, 0.98],
+      [32, 17, 2, 1.0], [34, 16, 1, 0.96], [35, 17, 1, 0.98], [36, 19, 2, 1.0], [38, 17, 2, 0.96],
+      [40, 18, 2, 1.0], [42, 16, 1, 0.96], [43, 18, 1, 0.98], [44, 20, 2, 1.0], [46, 18, 2, 0.98],
+      [48, 21, 1, 1.0, 0, 'square_cartoon'], [49, 20, 1, 0.96, 0, 'square_cartoon'], [50, 19, 1, 0.98, 0, 'square_cartoon'], [51, 18, 1, 0.96, 0, 'square_cartoon'],
+      [52, 16, 2, 1.0], [54, 18, 2, 1.0], [56, 20, 2, 1.0], [58, 18, 2, 1.0], [60, 21, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Cheeky ska-funk cartoon horn pops on the off-beats!
+      [2, 14, 1, 0.88, 0, 'brass_punch'], [6, 14, 1, 0.88, 0, 'brass_punch'], [10, 13, 1, 0.88, 0, 'brass_punch'], [14, 11, 1, 0.9, 0, 'brass_punch'],
+      [18, 14, 1, 0.88, 0, 'brass_punch'], [22, 17, 1, 0.9, 0, 'brass_punch'], [26, 18, 1, 0.9, 0, 'brass_punch'], [30, 16, 1, 0.92, 0, 'brass_punch'],
+      [34, 17, 1, 0.9, 0, 'brass_punch'], [38, 17, 1, 0.9, 0, 'brass_punch'], [42, 18, 1, 0.92, 0, 'brass_punch'], [46, 20, 1, 0.94, 0, 'brass_punch'],
+      [50, 21, 1, 0.92, 0, 'brass_punch'], [54, 18, 1, 0.92, 0, 'brass_punch'], [58, 20, 1, 0.94, 0, 'brass_punch'], [62, 21, 2, 0.96, 0, 'brass_punch'],
+    ]),
+    chords: makeChordTrack(64, [
+      [2, 0, 1, 0.78], [6, 0, 1, 0.76], [10, 6, 1, 0.8], [14, 4, 1, 0.8],
+      [18, 0, 1, 0.78], [22, 3, 1, 0.8], [26, 4, 1, 0.82], [30, 6, 1, 0.82],
+      [34, 3, 1, 0.82], [38, 3, 1, 0.8], [42, 4, 1, 0.84], [46, 4, 1, 0.84],
+      [50, 0, 1, 0.84], [54, 6, 1, 0.84], [58, 4, 1, 0.86], [62, 0, 2, 0.9],
+    ]),
+    drums: makeDrumPattern('chaotic_breaks', 64),
+  },
+
+  // 37. BOSS DOPPEL — "Uncanny Mirror Meltdown" (C# Phrygian, 162 BPM, straight 0.0)
+  // Eerie warped detuned mirror-tempo bass groove (twisted reflection of stage_crypt)!
+  boss_doppel: {
+    steps: 64,
+    bass: makeNoteTrack(64, [
+      // Uncanny asymmetric mirror-tempo bass groove (3+3+5+3+2 mirrored to 2+3+5+3+3)!
+      [0, 0, 2, 1.0], [3, 1, 2, 0.96], [6, 0, 2, 0.98], [11, 6, 2, 0.96], [14, 1, 2, 0.98],
+      [16, 0, 2, 1.0], [18, 7, 2, 0.94], [21, 5, 2, 0.96], [26, 4, 2, 0.96], [29, 1, 3, 0.98],
+      [32, 3, 2, 1.0], [35, 4, 2, 0.96], [38, 1, 2, 0.98], [43, 5, 2, 0.96], [46, 4, 2, 0.98],
+      [48, 1, 2, 1.0], [50, 0, 2, 0.98], [53, 6, 2, 0.98], [56, 4, 2, 1.0], [59, 1, 2, 1.0], [61, 0, 3, 1.0],
+    ]),
+    lead: makeNoteTrack(64, [
+      // Sinister inverted mirror of stage_crypt's motif in C# Phrygian with warped bends!
+      [0, 14, 2, 0.96], [2, 12, 1, 0.92], [3, 11, 1, 0.94], [4, 10, 2, 0.98], [6, 12, 2, 0.94],
+      [8, 10, 2, 0.96], [10, 8, 2, 0.98], [12, 7, 3, 1.0],
+      [16, 8, 2, 0.96], [18, 10, 2, 0.94], [20, 11, 2, 0.96, -1], [22, 12, 2, 0.94],
+      [24, 10, 2, 0.96], [26, 8, 2, 0.96], [28, 7, 2, 0.98], [30, 8, 2, 0.96],
+      [32, 11, 2, 0.98], [34, 10, 2, 0.96], [36, 8, 2, 0.98], [38, 10, 2, 0.94],
+      [40, 12, 2, 0.98], [42, 14, 2, 1.0], [44, 15, 2, 1.0], [46, 14, 2, 0.98],
+      [48, 15, 2, 1.0], [50, 14, 2, 0.98], [52, 12, 2, 0.98], [54, 11, 2, 0.96, -1],
+      [56, 10, 2, 0.98], [58, 8, 2, 0.98], [60, 7, 3, 1.0],
+    ]),
+    counter: makeNoteTrack(64, [
+      // Ghostly phantom mirror-delay theremin lagging 2–3 steps behind the lead!
+      [3, 14, 2, 0.78, 0, 'theremin_wail'], [7, 10, 2, 0.78, 0, 'theremin_wail'], [14, 8, 2, 0.8, 0, 'theremin_wail'],
+      [19, 10, 2, 0.78, 0, 'theremin_wail'], [23, 12, 2, 0.8, 0, 'theremin_wail'], [30, 7, 2, 0.82, 0, 'theremin_wail'],
+      [35, 11, 2, 0.82, 0, 'theremin_wail'], [41, 12, 2, 0.82, 0, 'theremin_wail'], [47, 15, 2, 0.86, 0, 'theremin_wail'],
+      [51, 15, 2, 0.84, 0, 'theremin_wail'], [57, 10, 2, 0.86, 0, 'theremin_wail'], [61, 8, 3, 0.88, 0, 'theremin_wail'],
+    ]),
+    chords: makeChordTrack(64, [
+      [0, 0, 5, 0.78], [6, 1, 5, 0.78], [12, 6, 4, 0.78],
+      [16, 0, 5, 0.78], [22, 5, 4, 0.78], [28, 1, 4, 0.82],
+      [32, 3, 5, 0.8], [38, 1, 5, 0.8], [44, 4, 4, 0.82],
+      [48, 1, 4, 0.84], [54, 6, 4, 0.84], [60, 0, 4, 0.88],
+    ]),
+    drums: makeCustomDrumPattern(64, (_step, bar, s) => {
+      // Uncanny mirror-tempo drums: asymmetric kicks & warped metal clangs!
+      let h = '';
+      if (bar % 2 === 0) {
+        if (s === 0 || s === 6 || s === 11) h += 'K';
+        if (s === 3 || s === 12) h += 'S';
+        if (s === 5 || s === 14) h += 'A';
+        if (s === 2 || s === 9 || s === 15) h += 'R';
+      } else {
+        // Mirrored rhythmic inversion!
+        if (s === 0 || s === 5 || s === 10 || s === 14) h += 'K';
+        if (s === 4 || s === 13) h += 'S';
+        if (s === 2 || s === 11) h += 'A';
+        if (s === 7 || s === 15) h += 'R';
+      }
+      if (s % 2 === 0) h += s === 14 ? 'O' : 'H';
+      if (bar === 3 && s >= 12) h += 'SA';
+      return h;
+    }),
+  },
+
+  // 38. BOSS MEGACRUST — "Summit of the Mega-Crust" (E Harmonic Minor, 178 BPM, 8 bars = 128 steps!)
+  // Unforgettable multi-section opera-rock & circus-metal grand finale!
+  //   Sec 1 (Bars 0–1, steps 0–31):   Theatrical Opera-Rock Cathedral Overture
+  //   Sec 2 (Bars 2–3, steps 32–63):  Manic Circus-Metal Carnival Madness
+  //   Sec 3 (Bars 4–5, steps 64–95):  Blistering Neo-Classical Metal Shred Bridge
+  //   Sec 4 (Bars 6–7, steps 96–127): Grand Opera-Metal Finale Anthem Climax!
+  boss_megacrust: {
+    steps: 128,
+    bass: makeNoteTrack(128, [
+      // Sec 1 (Bars 0–1): Pounding symphonic opera-rock octave bass (Em - B7 - C - B7)
+      [0, 0, 1, 1.0, 0, undefined, 'octave_pump'], [2, 7, 1, 0.9, 0, undefined, 'octave_pump'],
+      [4, 0, 1, 1.0, 0, undefined, 'octave_pump'], [6, 7, 1, 0.9, 0, undefined, 'octave_pump'],
+      [8, 4, 1, 1.0, 0, undefined, 'octave_pump'], [10, 11, 1, 0.9, 0, undefined, 'octave_pump'],
+      [12, 4, 2, 0.98, 0, undefined, 'octave_pump'], [14, 6, 2, 0.98, 0, undefined, 'octave_pump'],
+      [16, 5, 1, 1.0, 0, undefined, 'octave_pump'], [18, 12, 1, 0.9, 0, undefined, 'octave_pump'],
+      [20, 3, 1, 1.0, 0, undefined, 'octave_pump'], [22, 10, 1, 0.9, 0, undefined, 'octave_pump'],
+      [24, 4, 2, 1.0, 0, undefined, 'octave_pump'], [26, 6, 2, 0.98, 0, undefined, 'octave_pump'],
+      [28, 7, 2, 1.0, 0, undefined, 'octave_pump'], [30, 6, 2, 0.98, 0, undefined, 'octave_pump'],
+
+      // Sec 2 (Bars 2–3): Stomping double-time circus-metal tuba oompah!
+      [32, 0, 2, 1.0, 0, undefined, 'tuba_oompah'], [34, 4, 2, 0.92, 0, undefined, 'tuba_oompah'],
+      [36, 0, 2, 1.0, 0, undefined, 'tuba_oompah'], [38, 4, 2, 0.92, 0, undefined, 'tuba_oompah'],
+      [40, 3, 2, 1.0, 0, undefined, 'tuba_oompah'], [42, 7, 2, 0.92, 0, undefined, 'tuba_oompah'],
+      [44, 3, 2, 1.0, 0, undefined, 'tuba_oompah'], [46, 2, 2, 0.94, 0, undefined, 'tuba_oompah'],
+      [48, 5, 2, 1.0, 0, undefined, 'tuba_oompah'], [50, 2, 2, 0.92, 0, undefined, 'tuba_oompah'],
+      [52, 4, 2, 1.0, 0, undefined, 'tuba_oompah'], [54, 1, 2, 0.94, 0, undefined, 'tuba_oompah'],
+      [56, 0, 2, 1.0, 0, undefined, 'tuba_oompah'], [58, 3, 2, 0.96, 0, undefined, 'tuba_oompah'],
+      [60, 4, 2, 1.0, 0, undefined, 'tuba_oompah'], [62, 6, 2, 1.0, 0, undefined, 'tuba_oompah'],
+
+      // Sec 3 (Bars 4–5): Blistering heavy-metal triple-gallop shred bridge!
+      [64, 5, 1, 1.0, 0, undefined, 'gallop_rock'], [66, 5, 1, 0.92, 0, undefined, 'gallop_rock'], [67, 5, 1, 0.9, 0, undefined, 'gallop_rock'],
+      [68, 5, 1, 1.0, 0, undefined, 'gallop_rock'], [70, 4, 2, 0.96, 0, undefined, 'gallop_rock'],
+      [72, 4, 1, 1.0, 0, undefined, 'gallop_rock'], [74, 4, 1, 0.92, 0, undefined, 'gallop_rock'], [75, 4, 1, 0.9, 0, undefined, 'gallop_rock'],
+      [76, 4, 2, 0.98, 0, undefined, 'gallop_rock'], [78, 6, 2, 0.98, 0, undefined, 'gallop_rock'],
+      [80, 3, 1, 1.0, 0, undefined, 'gallop_rock'], [82, 3, 1, 0.92, 0, undefined, 'gallop_rock'], [83, 3, 1, 0.9, 0, undefined, 'gallop_rock'],
+      [84, 3, 2, 0.98, 0, undefined, 'gallop_rock'], [86, 2, 2, 0.96, 0, undefined, 'gallop_rock'],
+      [88, 4, 1, 1.0, 0, undefined, 'gallop_rock'], [90, 4, 1, 0.94, 0, undefined, 'gallop_rock'], [91, 4, 1, 0.92, 0, undefined, 'gallop_rock'],
+      [92, 5, 2, 1.0, 0, undefined, 'gallop_rock'], [94, 6, 2, 1.0, 0, undefined, 'gallop_rock'],
+
+      // Sec 4 (Bars 6–7): Grand Opera-Metal Finale Climax full-throttle octaves!
+      [96, 0, 1, 1.0, 0, undefined, 'octave_pump'], [98, 7, 1, 0.94, 0, undefined, 'octave_pump'],
+      [100, 0, 1, 1.0, 0, undefined, 'octave_pump'], [102, 7, 1, 0.94, 0, undefined, 'octave_pump'],
+      [104, 5, 1, 1.0, 0, undefined, 'octave_pump'], [106, 12, 1, 0.94, 0, undefined, 'octave_pump'],
+      [108, 5, 2, 1.0, 0, undefined, 'octave_pump'], [110, 4, 2, 0.98, 0, undefined, 'octave_pump'],
+      [112, 3, 1, 1.0, 0, undefined, 'octave_pump'], [114, 10, 1, 0.94, 0, undefined, 'octave_pump'],
+      [116, 4, 1, 1.0, 0, undefined, 'octave_pump'], [118, 11, 1, 0.96, 0, undefined, 'octave_pump'],
+      [120, 5, 2, 1.0, 0, undefined, 'octave_pump'], [122, 6, 2, 1.0, 0, undefined, 'octave_pump'],
+      [124, 7, 2, 1.0, 0, undefined, 'octave_pump'], [126, 4, 2, 1.0, 0, undefined, 'octave_pump'],
+    ]),
+    lead: makeNoteTrack(128, [
+      // Sec 1 (Bars 0–1): Towering Theatrical Opera-Rock Cathedral Organ!
+      [0, 14, 3, 1.0, 0, 'organ_spooky'], [4, 16, 2, 0.98, 0, 'organ_spooky'], [6, 18, 2, 1.0, 0, 'organ_spooky'],
+      [8, 17, 3, 1.0, 0, 'organ_spooky'], [12, 16, 2, 0.96, 0, 'organ_spooky'], [14, 13, 2, 0.98, 0, 'organ_spooky'],
+      [16, 19, 3, 1.0, 0, 'organ_spooky'], [20, 17, 2, 0.98, 0, 'organ_spooky'], [22, 16, 2, 0.98, 0, 'organ_spooky'],
+      [24, 18, 2, 1.0, 0, 'organ_spooky'], [26, 20, 2, 1.0, 0, 'organ_spooky'], [28, 21, 4, 1.0, 0, 'organ_spooky'],
+
+      // Sec 2 (Bars 2–3): Manic Circus-Metal Carnival Accordion Madness!
+      [32, 14, 1, 1.0, 0, 'accordion_bouncy'], [33, 15, 1, 0.94, 1, 'accordion_bouncy'], [34, 16, 1, 0.98, 0, 'accordion_bouncy'], [35, 14, 1, 0.94, 0, 'accordion_bouncy'],
+      [36, 18, 2, 1.0, 0, 'accordion_bouncy'], [38, 16, 2, 0.96, 0, 'accordion_bouncy'],
+      [40, 17, 1, 1.0, 0, 'accordion_bouncy'], [41, 16, 1, 0.94, 0, 'accordion_bouncy'], [42, 15, 1, 0.96, 0, 'accordion_bouncy'], [43, 14, 1, 0.94, 0, 'accordion_bouncy'],
+      [44, 13, 2, 0.98, 0, 'accordion_bouncy'], [46, 14, 2, 0.98, 0, 'accordion_bouncy'],
+      [48, 19, 1, 1.0, 0, 'accordion_bouncy'], [49, 18, 1, 0.96, 0, 'accordion_bouncy'], [50, 19, 1, 1.0, 0, 'accordion_bouncy'], [51, 20, 1, 0.98, 0, 'accordion_bouncy'],
+      [52, 18, 2, 1.0, 0, 'accordion_bouncy'], [54, 16, 2, 0.98, 0, 'accordion_bouncy'],
+      [56, 14, 1, 1.0, 0, 'accordion_bouncy'], [57, 16, 1, 0.96, 0, 'accordion_bouncy'], [58, 18, 1, 1.0, 0, 'accordion_bouncy'], [59, 19, 1, 1.0, 0, 'accordion_bouncy'],
+      [60, 20, 2, 1.0, 0, 'accordion_bouncy'], [62, 21, 2, 1.0, 0, 'accordion_bouncy'],
+
+      // Sec 3 (Bars 4–5): Blistering 16th-Note Neo-Classical Metal Guitar/Saw Shred Solo!
+      [64, 19, 1, 1.0, 0, 'saw_riff'], [65, 16, 1, 0.96, 0, 'saw_riff'], [66, 14, 1, 0.96, 0, 'saw_riff'], [67, 16, 1, 0.96, 0, 'saw_riff'],
+      [68, 19, 1, 1.0, 0, 'saw_riff'], [69, 21, 1, 1.0, 0, 'saw_riff'], [70, 23, 2, 1.0, 0, 'screech_lead'],
+      [72, 20, 1, 1.0, 0, 'saw_riff'], [73, 18, 1, 0.96, 0, 'saw_riff'], [74, 16, 1, 0.96, 0, 'saw_riff'], [75, 18, 1, 0.96, 0, 'saw_riff'],
+      [76, 20, 1, 1.0, 0, 'saw_riff'], [77, 21, 1, 1.0, 0, 'saw_riff'], [78, 20, 2, 1.0, 0, 'screech_lead'],
+      [80, 17, 1, 1.0, 0, 'saw_riff'], [81, 19, 1, 0.98, 0, 'saw_riff'], [82, 21, 1, 1.0, 0, 'saw_riff'], [83, 19, 1, 0.96, 0, 'saw_riff'],
+      [84, 17, 1, 0.98, 0, 'saw_riff'], [85, 16, 1, 0.96, 0, 'saw_riff'], [86, 14, 2, 0.98, 0, 'saw_riff'],
+      [88, 18, 1, 1.0, 0, 'screech_lead'], [89, 20, 1, 1.0, 0, 'screech_lead'], [90, 21, 1, 1.0, 0, 'screech_lead'], [91, 23, 1, 1.0, 0, 'screech_lead'],
+      [92, 24, 2, 1.0, 0, 'screech_lead'], [94, 23, 2, 1.0, 0, 'screech_lead'],
+
+      // Sec 4 (Bars 6–7): Grand Opera-Metal Brass Finale Climax Anthem!
+      [96, 21, 3, 1.0, 0, 'brass_punch'], [100, 20, 2, 1.0, 0, 'brass_punch'], [102, 18, 2, 1.0, 0, 'brass_punch'],
+      [104, 19, 3, 1.0, 0, 'brass_punch'], [108, 18, 2, 1.0, 0, 'brass_punch'], [110, 16, 2, 1.0, 0, 'brass_punch'],
+      [112, 17, 2, 1.0, 0, 'brass_punch'], [114, 19, 2, 1.0, 0, 'brass_punch'], [116, 20, 2, 1.0, 0, 'brass_punch'], [118, 21, 2, 1.0, 0, 'brass_punch'],
+      [120, 23, 2, 1.0, 0, 'brass_punch'], [122, 24, 2, 1.0, 0, 'brass_punch'], [124, 25, 2, 1.0, 0, 'brass_punch'], [126, 21, 2, 1.0, 0, 'brass_punch'],
+    ]),
+    counter: makeNoteTrack(128, [
+      // Sec 1: Operatic brass choir fanfare stabs
+      [0, 7, 3, 0.9, 0, 'brass_punch'], [8, 11, 3, 0.9, 0, 'brass_punch'],
+      [16, 12, 3, 0.92, 0, 'brass_punch'], [24, 13, 3, 0.94, 0, 'brass_punch'], [28, 14, 4, 0.96, 0, 'brass_punch'],
+      // Sec 2: Maniacal circus-calliope honky-tonk off-beats
+      [34, 21, 1, 0.84, 0, 'honky_tonk'], [38, 21, 1, 0.84, 0, 'honky_tonk'], [42, 20, 1, 0.84, 0, 'honky_tonk'], [46, 18, 1, 0.84, 0, 'honky_tonk'],
+      [50, 23, 1, 0.86, 0, 'honky_tonk'], [54, 20, 1, 0.86, 0, 'honky_tonk'], [58, 21, 1, 0.88, 0, 'honky_tonk'], [62, 25, 2, 0.92, 0, 'honky_tonk'],
+      // Sec 3: Crushing low war-horn power blasts
+      [64, 5, 4, 0.92, 0, 'war_horn'], [72, 4, 4, 0.94, 0, 'war_horn'],
+      [80, 3, 4, 0.94, 0, 'war_horn'], [88, 4, 4, 0.96, 0, 'war_horn'], [92, 6, 4, 0.98, 0, 'war_horn'],
+      // Sec 4: Screaming harmonizing metal lead soaring with the opera brass!
+      [96, 14, 3, 0.92, 0, 'screech_lead'], [100, 13, 2, 0.9, 0, 'screech_lead'], [104, 12, 3, 0.92, 0, 'screech_lead'],
+      [112, 10, 2, 0.92, 0, 'screech_lead'], [114, 12, 2, 0.94, 0, 'screech_lead'], [116, 13, 2, 0.96, 0, 'screech_lead'], [118, 14, 2, 0.96, 0, 'screech_lead'],
+      [120, 16, 2, 0.98, 0, 'screech_lead'], [122, 17, 2, 0.98, 0, 'screech_lead'], [124, 18, 2, 1.0, 0, 'screech_lead'], [126, 20, 2, 1.0, 0, 'screech_lead'],
+    ]),
+    chords: makeChordTrack(128, [
+      // Sec 1: Cathedral organ swells + rock fifths
+      [0, 0, 6, 0.88, 'organ_swell'], [8, 4, 6, 0.88, 'organ_swell'],
+      [16, 5, 4, 0.88, 'power_fifth'], [20, 3, 4, 0.88, 'power_fifth'], [24, 4, 6, 0.92, 'power_fifth'],
+      // Sec 2: Off-beat circus-metal guitar crunches
+      [34, 0, 2, 0.86, 'power_fifth'], [38, 0, 2, 0.86, 'power_fifth'], [42, 3, 2, 0.88, 'power_fifth'], [46, 3, 2, 0.88, 'power_fifth'],
+      [50, 5, 2, 0.88, 'power_fifth'], [54, 4, 2, 0.9, 'power_fifth'], [58, 0, 2, 0.9, 'power_fifth'], [60, 4, 4, 0.94, 'power_fifth'],
+      // Sec 3: Chugging shred-metal power fifths
+      [64, 5, 2, 0.92, 'power_fifth'], [68, 5, 2, 0.9, 'power_fifth'], [72, 4, 2, 0.92, 'power_fifth'], [76, 4, 2, 0.92, 'power_fifth'],
+      [80, 3, 2, 0.92, 'power_fifth'], [84, 3, 2, 0.9, 'power_fifth'], [88, 4, 2, 0.94, 'power_fifth'], [92, 6, 4, 0.96, 'power_fifth'],
+      // Sec 4: Towering final-boss brass choir!
+      [96, 0, 4, 0.95, 'brass_stab'], [104, 5, 4, 0.95, 'brass_stab'],
+      [112, 3, 4, 0.96, 'brass_stab'], [116, 4, 4, 0.96, 'brass_stab'],
+      [120, 5, 2, 0.98, 'brass_stab'], [122, 6, 2, 0.98, 'brass_stab'], [124, 4, 4, 1.0, 'brass_stab'],
+    ]),
+    drums: makeCustomDrumPattern(128, (step, bar, s) => {
+      // Sec 1 (Bars 0–1): Epic opera-rock stomp
+      if (bar < 2) {
+        let h = '';
+        if (s === 0 || s === 2 || s === 8 || s === 10) h += 'K';
+        if (s === 4 || s === 12) h += 'SC';
+        if (s % 2 === 0) h += s === 6 || s === 14 ? 'O' : 'H';
+        if (bar === 1 && s >= 12) h += 'ST';
+        return h;
+      }
+      // Sec 2 (Bars 2–3): Manic circus-metal thrash with cowbell!
+      if (bar < 4) {
+        let h = '';
+        if (s === 0 || s === 4 || s === 8 || s === 12) h += 'K';
+        if (s === 2 || s === 6 || s === 10 || s === 14) h += 'SB';
+        if (s === 4 || s === 12) h += 'C';
+        if (bar === 3 && s >= 12) h += 'ST';
+        return h;
+      }
+      // Sec 3 (Bars 4–5): Blistering double-kick shred-metal + anvil clangs!
+      if (bar < 6) {
+        let h = '';
+        if (s % 2 === 0) h += 'K';
+        if (s === 4 || s === 12) h += 'SA';
+        if (s === 0 || s === 8) h += 'A';
+        h += s % 4 === 2 ? 'O' : 'H';
+        if (bar === 5 && s >= 12) h += 'ST';
+        return h;
+      }
+      // Sec 4 (Bars 6–7): Grand finale all-out onslaught + 8-step crescendo cascade!
+      let h = '';
+      if (s % 2 === 0) h += 'K';
+      if (s === 4 || s === 12) h += 'SC';
+      if (s === 0 || s === 8) h += 'A';
+      h += s % 2 === 0 ? 'O' : 'H';
+      if (step >= 120) h += step % 2 === 0 ? 'STA' : 'KST';
+      return h;
+    }),
+  },
 };
 
-// ============================================================================
-// Deterministic Motif Composer for ALL Remaining MusicTrackIds
-// Guarantees every single track has a unique, punchy, catchy 4-bar arrangement!
-// ============================================================================
+export const BESPOKE_TRACK_IDS: readonly Exclude<MusicTrackId, 'none'>[] = Object.keys(
+  TRACK_ARRANGEMENTS,
+) as Array<Exclude<MusicTrackId, 'none'>>;
 
-function hashTrackId(id: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < id.length; i++) {
-    h ^= id.charCodeAt(i);
-    h = Math.imul(h, 16777619) >>> 0;
-  }
-  return h;
-}
-
-function makeLcg(seed: number): () => number {
-  let s = seed >>> 0 || 1;
-  return () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
+/** Returns the bespoke arrangement for any playable MusicTrackId (or null for 'none'). */
+export function getTrackArrangement(track: MusicTrackId): TrackArrangement | null {
+  if (track === 'none') return null;
+  return TRACK_ARRANGEMENTS[track] ?? null;
 }
 
 function buildArrangementForTrack(meta: MusicTrackMeta): TrackArrangement {
-  const flagship = FLAGSHIP_ARRANGEMENTS[meta.id];
-  if (flagship) return flagship;
-
-  const steps = Math.max(16, meta.loopBars * 16);
-  const rand = makeLcg(hashTrackId(meta.id) ^ (meta.bpm * 2654435761));
-  const bass: Array<NoteEvent | null> = new Array(steps).fill(null);
-  const lead: Array<NoteEvent | null> = new Array(steps).fill(null);
-  const chords: Array<ChordEvent | null> = new Array(steps).fill(null);
-  const drums = makeDrumPattern(meta.percussionStyle, steps);
-
-  // Pick a musical 4-bar chord progression tailored to track vibe
-  const progressions: ReadonlyArray<readonly [number, number, number, number]> = [
-    [0, 3, 4, 0],
-    [0, 5, 3, 4],
-    [0, 6, 5, 4],
-    [0, 2, 3, 4],
-    [0, 4, 5, 3],
-    [0, 3, 6, 4],
-  ];
-  const prog = progressions[Math.floor(rand() * progressions.length)];
-
-  // Build 1-bar rhythmic motif for the lead, then vary across bars (A - A' - B - C turnaround)
-  const motifSteps: number[] = [];
-  for (let s = 0; s < 16; s += 2) {
-    if (s === 0 || rand() > 0.28) {
-      motifSteps.push(s);
-    } else if (s + 1 < 16 && rand() > 0.5) {
-      motifSteps.push(s + 1);
-    }
+  if (meta.id === 'none') {
+    return { steps: 16, bass: [], lead: [], chords: [], drums: [] };
   }
-  const motifOffsets = motifSteps.map(() => Math.floor(rand() * 7) - 1);
-
-  const numBars = Math.floor(steps / 16);
-  for (let bar = 0; bar < numBars; bar++) {
-    const rootDeg = prog[bar % prog.length];
-    const barStart = bar * 16;
-
-    // ---- Bassline by style ----
-    for (let s = 0; s < 16; s++) {
-      const idx = barStart + s;
-      switch (meta.bassStyle) {
-        case 'octave_pump':
-          if (s % 2 === 0) {
-            bass[idx] = { deg: s % 4 === 0 ? rootDeg : rootDeg + 7, len: 1, vel: s % 4 === 0 ? 0.96 : 0.85 };
-          }
-          break;
-        case 'slap_funk':
-          if (s === 0 || s === 3 || s === 6 || s === 10 || s === 12 || s === 14) {
-            const offset = s === 6 ? 4 : s === 10 ? 6 : s === 14 ? 2 : 0;
-            bass[idx] = { deg: rootDeg + offset, len: s === 3 ? 1 : 2, vel: s === 0 ? 0.95 : 0.86 };
-          }
-          break;
-        case 'tuba_oompah':
-          if (s === 0 || s === 8) bass[idx] = { deg: rootDeg, len: 2, vel: 0.94 };
-          else if (s === 4 || s === 12) bass[idx] = { deg: rootDeg + 4, len: 2, vel: 0.86 };
-          else if (bar === numBars - 1 && s === 14) bass[idx] = { deg: rootDeg + 6, len: 2, vel: 0.9 };
-          break;
-        case 'gallop_rock':
-          if (s === 0 || s === 3 || s === 4 || s === 8 || s === 11 || s === 12 || s === 14) {
-            const offset = s >= 12 ? (s === 14 ? 4 : 2) : 0;
-            bass[idx] = { deg: rootDeg + offset, len: 1, vel: s % 4 === 0 ? 0.96 : 0.86 };
-          }
-          break;
-        case 'acid_bounce':
-          if (s === 0 || s === 2 || s === 5 || s === 8 || s === 10 || s === 13 || s === 14) {
-            const offset = s === 5 ? 7 : s === 10 ? 3 : s === 13 ? 6 : 0;
-            bass[idx] = { deg: rootDeg + offset, len: 1, vel: 0.9 };
-          }
-          break;
-        case 'sub_stomp':
-          if (s === 0 || s === 6 || s === 8 || s === 14) {
-            bass[idx] = { deg: rootDeg + (s === 14 ? 4 : 0), len: 2, vel: 0.98 };
-          }
-          break;
-        case 'spooky_creep':
-          if (s === 0 || s === 4 || s === 8 || s === 12) {
-            const stepWalk = [0, 2, 4, 3][s / 4];
-            bass[idx] = { deg: rootDeg + stepWalk, len: 3, vel: 0.86 };
-          }
-          break;
-        case 'walking_swing':
-          if (s % 4 === 0) {
-            const walk = [0, 2, 4, 5][s / 4];
-            bass[idx] = { deg: rootDeg + walk, len: 3, vel: 0.85 };
-          }
-          break;
-        case 'none':
-          break;
-      }
-    }
-
-    // ---- Chords by style ----
-    if (meta.chordStyle !== 'none') {
-      if (meta.chordStyle === 'organ_swell') {
-        chords[barStart] = { deg: rootDeg, len: 8, vel: 0.68 };
-        chords[barStart + 8] = { deg: rootDeg + (bar % 2 === 0 ? 0 : 2), len: 6, vel: 0.65 };
-      } else if (meta.chordStyle === 'funk_clav' || meta.chordStyle === 'jazz_comp') {
-        chords[barStart + 2] = { deg: rootDeg, len: 2, vel: 0.68 };
-        chords[barStart + 6] = { deg: rootDeg, len: 2, vel: 0.62 };
-        chords[barStart + 12] = { deg: rootDeg + (bar === numBars - 1 ? 4 : 0), len: 2, vel: 0.72 };
-      } else {
-        chords[barStart] = { deg: rootDeg, len: 2, vel: 0.8 };
-        chords[barStart + 6] = { deg: rootDeg, len: 2, vel: 0.72 };
-        chords[barStart + 12] = { deg: rootDeg + (bar === numBars - 1 ? 4 : 2), len: 2, vel: 0.8 };
-      }
-    }
-
-    // ---- Lead Melody (A - A' - B - Turnaround) ----
-    const barLift = bar === 2 ? 2 : bar === 3 ? 3 : 0;
-    for (let m = 0; m < motifSteps.length; m++) {
-      const s = motifSteps[m];
-      const nextS = m + 1 < motifSteps.length ? motifSteps[m + 1] : 16;
-      const len = Math.max(1, Math.min(3, nextS - s));
-      let deg = 7 + rootDeg + motifOffsets[m] + barLift;
-      if (bar === numBars - 1 && m === motifSteps.length - 1) {
-        deg = 14; // strong resolution toward upper tonic
-      }
-      // Slight chromatic spice on passing tones for boss/spooky tracks
-      const semi =
-        bar === 3 && m === motifSteps.length - 2 && meta.id.startsWith('boss_') ? 1 : 0;
-      lead[barStart + s] = {
-        deg,
-        len,
-        vel: s === 0 || s === 8 ? 0.96 : 0.88,
-        semi,
-      };
-    }
-  }
-
-  return { steps, bass, lead, chords, drums };
+  return TRACK_ARRANGEMENTS[meta.id];
 }
 
 // ============================================================================
@@ -885,6 +2108,15 @@ export class ProceduralSynth {
     }
   }
 
+  /** Advances look-ahead scheduling immediately (useful for deterministic headless stepping). */
+  public tickSequencer(): void {
+    this.scheduleMusicAhead();
+  }
+
+  public getCurrentStep(): number {
+    return this.currentStep;
+  }
+
   private scheduleMusicAhead(): void {
     if (this.disposed || !this.activeArrangement || this.activeTrack === 'none') return;
     if (this.ctx.state !== 'running') {
@@ -923,11 +2155,12 @@ export class ProceduralSynth {
     stepDur: number,
   ): void {
     const bassNote = arr.bass[step];
-    if (bassNote && meta.bassStyle !== 'none') {
+    const bassStyle = bassNote?.bassStyle ?? meta.bassStyle;
+    if (bassNote && bassStyle !== 'none') {
       const midi =
         scaleDegreeToMidi(meta.rootMidi - 12, meta.scale, bassNote.deg) + (bassNote.semi ?? 0);
       this.playBassVoice(
-        meta.bassStyle,
+        bassStyle,
         midiToFreq(midi),
         time,
         bassNote.len * stepDur * 0.92,
@@ -936,27 +2169,45 @@ export class ProceduralSynth {
     }
 
     const chord = arr.chords[step];
-    if (chord && meta.chordStyle !== 'none') {
+    const chordStyle = chord?.chordStyle ?? meta.chordStyle;
+    if (chord && chordStyle !== 'none') {
       this.playChordVoice(
-        meta.chordStyle,
+        chordStyle,
         meta,
         chord.deg,
         time,
         chord.len * stepDur * 0.9,
         chord.vel ?? 0.7,
+        chord.intervals,
       );
     }
 
     const leadNote = arr.lead[step];
-    if (leadNote && meta.leadStyle !== 'none') {
+    const leadStyle = leadNote?.leadStyle ?? meta.leadStyle;
+    if (leadNote && leadStyle !== 'none') {
       const midi =
         scaleDegreeToMidi(meta.rootMidi + 12, meta.scale, leadNote.deg) + (leadNote.semi ?? 0);
       this.playLeadVoice(
-        meta.leadStyle,
+        leadStyle,
         midiToFreq(midi),
         time,
         leadNote.len * stepDur * 0.9,
         leadNote.vel ?? 0.88,
+      );
+    }
+
+    const counterNote = arr.counter?.[step];
+    const counterStyle = counterNote?.leadStyle ?? meta.leadStyle;
+    if (counterNote && counterStyle !== 'none') {
+      const midi =
+        scaleDegreeToMidi(meta.rootMidi + 12, meta.scale, counterNote.deg) +
+        (counterNote.semi ?? 0);
+      this.playLeadVoice(
+        counterStyle,
+        midiToFreq(midi),
+        time,
+        counterNote.len * stepDur * 0.88,
+        (counterNote.vel ?? 0.8) * 0.78,
       );
     }
 
@@ -978,8 +2229,12 @@ export class ProceduralSynth {
     vel: number,
   ): void {
     const safeFreq = Math.max(32, Math.min(440, freq));
+    const safeDur = Math.max(0.03, dur);
     const ctx = this.ctx;
     const osc = ctx.createOscillator();
+    let osc2: OscillatorNode | null = null;
+    let lfo: OscillatorNode | null = null;
+    let lfoGain: GainNode | null = null;
     const filter = ctx.createBiquadFilter();
     const env = ctx.createGain();
 
@@ -987,18 +2242,23 @@ export class ProceduralSynth {
     let peak = 0.3 * vel;
     let attack = 0.008;
 
+    osc.frequency.setValueAtTime(safeFreq, t);
+
     switch (style) {
       case 'slap_funk':
         osc.type = 'sawtooth';
         filter.frequency.setValueAtTime(safeFreq * 7.5, t);
-        filter.frequency.exponentialRampToValueAtTime(Math.max(120, safeFreq * 2.1), t + Math.min(0.12, dur));
+        filter.frequency.exponentialRampToValueAtTime(
+          Math.max(120, safeFreq * 2.1),
+          t + Math.min(0.12, safeDur),
+        );
         filter.Q.setValueAtTime(4.2, t);
         peak = 0.28 * vel;
         break;
       case 'octave_pump':
         osc.type = 'sawtooth';
         filter.frequency.setValueAtTime(safeFreq * 5.2, t);
-        filter.frequency.exponentialRampToValueAtTime(Math.max(130, safeFreq * 2.0), t + dur);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(130, safeFreq * 2.0), t + safeDur);
         filter.Q.setValueAtTime(2.5, t);
         peak = 0.29 * vel;
         break;
@@ -1011,8 +2271,8 @@ export class ProceduralSynth {
         break;
       case 'acid_bounce':
         osc.type = 'sawtooth';
-        filter.frequency.setValueAtTime(safeFreq * 9.5, t);
-        filter.frequency.exponentialRampToValueAtTime(Math.max(110, safeFreq * 1.6), t + dur);
+        filter.frequency.setValueAtTime(Math.min(4800, safeFreq * 9.5), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(110, safeFreq * 1.6), t + safeDur);
         filter.Q.setValueAtTime(8.0, t);
         peak = 0.24 * vel;
         break;
@@ -1033,29 +2293,110 @@ export class ProceduralSynth {
         attack = 0.018;
         peak = 0.34 * vel;
         break;
+      case 'gothic_organ_bass':
+        osc.type = 'triangle';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sawtooth';
+        osc2.frequency.setValueAtTime(safeFreq * 2, t);
+        filter.frequency.setValueAtTime(Math.min(2400, safeFreq * 5.8), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(140, safeFreq * 2.4), t + safeDur);
+        filter.Q.setValueAtTime(2.2, t);
+        attack = 0.009;
+        peak = 0.32 * vel;
+        break;
+      case 'ragtime_stride':
+        osc.type = 'triangle';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'square';
+        osc2.frequency.setValueAtTime(safeFreq * 1.003, t);
+        filter.frequency.setValueAtTime(Math.min(2800, safeFreq * 6.5), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(120, safeFreq * 1.8), t + safeDur);
+        filter.Q.setValueAtTime(1.8, t);
+        attack = 0.004;
+        peak = 0.32 * vel;
+        break;
+      case 'boom_bap_sub':
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(safeFreq * 1.05, t);
+        osc.frequency.exponentialRampToValueAtTime(safeFreq, t + 0.02);
+        osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(safeFreq, t);
+        filter.frequency.setValueAtTime(Math.max(160, safeFreq * 3.0), t);
+        filter.Q.setValueAtTime(1.2, t);
+        attack = 0.006;
+        peak = 0.42 * vel;
+        break;
+      case 'wah_funk':
+        osc.type = 'sawtooth';
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.max(120, safeFreq * 2.2), t);
+        filter.frequency.exponentialRampToValueAtTime(
+          Math.min(4600, safeFreq * 10.5),
+          t + Math.min(0.032, safeDur * 0.35),
+        );
+        filter.frequency.exponentialRampToValueAtTime(Math.max(120, safeFreq * 1.9), t + safeDur);
+        filter.Q.setValueAtTime(7.2, t);
+        attack = 0.005;
+        peak = 0.27 * vel;
+        break;
+      case 'warped_detuned':
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(safeFreq * 0.986, t);
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sawtooth';
+        osc2.frequency.setValueAtTime(safeFreq * 1.016, t);
+        lfo = ctx.createOscillator();
+        lfoGain = ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.setValueAtTime(5.6, t);
+        lfoGain.gain.setValueAtTime(safeFreq * 0.024, t);
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        lfoGain.connect(osc2.frequency);
+        filter.frequency.setValueAtTime(Math.min(3400, safeFreq * 6.8), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(100, safeFreq * 1.7), t + safeDur);
+        filter.Q.setValueAtTime(5.4, t);
+        peak = 0.26 * vel;
+        break;
       case 'walking_swing':
       default:
         osc.type = 'triangle';
         filter.frequency.setValueAtTime(safeFreq * 4.2, t);
-        filter.frequency.exponentialRampToValueAtTime(Math.max(95, safeFreq * 1.8), t + dur);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(95, safeFreq * 1.8), t + safeDur);
         peak = 0.35 * vel;
         break;
     }
 
-    osc.frequency.setValueAtTime(safeFreq, t);
+    const safeAttack = Math.min(attack, safeDur * 0.35);
+    const midT = Math.max(t + safeAttack + 0.004, t + safeDur * 0.72);
+    const endT = Math.max(midT + 0.006, t + safeDur + 0.02);
+
     env.gain.setValueAtTime(0.0001, t);
-    env.gain.linearRampToValueAtTime(peak, t + attack);
-    env.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.35), t + dur * 0.72);
-    env.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.02);
+    env.gain.linearRampToValueAtTime(Math.max(0.0002, peak), t + safeAttack);
+    env.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.35), midT);
+    env.gain.exponentialRampToValueAtTime(0.0001, endT);
 
     osc.connect(filter);
+    if (osc2) osc2.connect(filter);
     filter.connect(env);
     env.connect(this.musicSequencerGain);
 
     osc.start(t);
-    osc.stop(t + dur + 0.03);
+    osc.stop(endT + 0.01);
+    if (osc2) {
+      osc2.start(t);
+      osc2.stop(endT + 0.01);
+    }
+    if (lfo) {
+      lfo.start(t);
+      lfo.stop(endT + 0.01);
+    }
     osc.onended = () => {
       osc.disconnect();
+      if (osc2) osc2.disconnect();
+      if (lfo) lfo.disconnect();
+      if (lfoGain) lfoGain.disconnect();
       filter.disconnect();
       env.disconnect();
     };
@@ -1068,15 +2409,21 @@ export class ProceduralSynth {
     dur: number,
     vel: number,
   ): void {
-    const safeFreq = Math.max(80, Math.min(3500, freq));
+    const safeFreq = Math.max(80, Math.min(3800, freq));
+    const safeDur = Math.max(0.03, dur);
     const ctx = this.ctx;
     const osc1 = ctx.createOscillator();
     let osc2: OscillatorNode | null = null;
+    let osc3: OscillatorNode | null = null;
+    let lfo: OscillatorNode | null = null;
+    let lfoGain: GainNode | null = null;
+    let shaper: WaveShaperNode | null = null;
     const filter = ctx.createBiquadFilter();
     const env = ctx.createGain();
 
     let peak = 0.17 * vel;
     let attack = 0.012;
+    let sustainRatio = 0.55;
 
     switch (style) {
       case 'brass_punch':
@@ -1088,8 +2435,11 @@ export class ProceduralSynth {
         osc2.frequency.setValueAtTime(safeFreq * 1.006, t);
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(safeFreq * 1.6, t);
-        filter.frequency.linearRampToValueAtTime(Math.min(7200, safeFreq * 5.2), t + 0.028);
-        filter.frequency.exponentialRampToValueAtTime(Math.max(400, safeFreq * 2.4), t + dur);
+        filter.frequency.linearRampToValueAtTime(
+          Math.min(7200, safeFreq * 5.2),
+          t + Math.min(0.028, safeDur * 0.4),
+        );
+        filter.frequency.exponentialRampToValueAtTime(Math.max(400, safeFreq * 2.4), t + safeDur);
         filter.Q.setValueAtTime(2.4, t);
         peak = 0.14 * vel;
         break;
@@ -1136,6 +2486,7 @@ export class ProceduralSynth {
         filter.Q.setValueAtTime(3.2, t);
         peak = 0.23 * vel;
         attack = 0.005;
+        sustainRatio = 0.32;
         break;
 
       case 'synth_bell':
@@ -1148,6 +2499,7 @@ export class ProceduralSynth {
         filter.frequency.setValueAtTime(6500, t);
         peak = 0.16 * vel;
         attack = 0.005;
+        sustainRatio = 0.35;
         break;
 
       case 'screech_lead':
@@ -1164,13 +2516,247 @@ export class ProceduralSynth {
         break;
 
       case 'whistle_flute':
-        osc1.type = 'triangle';
-        osc1.frequency.setValueAtTime(safeFreq * 0.94, t);
-        osc1.frequency.exponentialRampToValueAtTime(safeFreq, t + 0.02);
+        // Expressive spaghetti-western cowboy whistle with gentle vibrato!
+        osc1.type = 'sine';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(safeFreq * 0.93, t);
+        osc1.frequency.exponentialRampToValueAtTime(safeFreq, t + Math.min(0.032, safeDur * 0.35));
+        osc2.frequency.setValueAtTime(safeFreq * 0.93, t);
+        osc2.frequency.exponentialRampToValueAtTime(safeFreq, t + Math.min(0.032, safeDur * 0.35));
+        lfo = ctx.createOscillator();
+        lfoGain = ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.setValueAtTime(5.8, t);
+        lfoGain.gain.setValueAtTime(safeFreq * 0.014, t);
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc1.frequency);
+        lfoGain.connect(osc2.frequency);
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(5000, t);
+        filter.frequency.setValueAtTime(4800, t);
+        peak = 0.19 * vel;
+        attack = 0.015;
+        break;
+
+      case 'surf_guitar':
+        // Twangy spring-plucked desert surf guitar!
+        osc1.type = 'sawtooth';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(safeFreq * 1.022, t);
+        osc1.frequency.exponentialRampToValueAtTime(safeFreq, t + 0.016);
+        osc2.frequency.setValueAtTime(safeFreq * 1.004, t);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.min(6200, safeFreq * 5.8), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(420, safeFreq * 2.1), t + safeDur);
+        filter.Q.setValueAtTime(3.6, t);
+        peak = 0.17 * vel;
+        attack = 0.004;
+        sustainRatio = 0.38;
+        break;
+
+      case 'theremin_wail':
+        // Spooky haunted-graveyard theremin with swooping pitch glide & eerie LFO vibrato!
+        osc1.type = 'sine';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(safeFreq * 0.88, t);
+        osc1.frequency.exponentialRampToValueAtTime(safeFreq, t + Math.min(0.048, safeDur * 0.4));
+        osc2.frequency.setValueAtTime(safeFreq * 0.88, t);
+        osc2.frequency.exponentialRampToValueAtTime(safeFreq, t + Math.min(0.048, safeDur * 0.4));
+        lfo = ctx.createOscillator();
+        lfoGain = ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.setValueAtTime(6.6, t);
+        lfoGain.gain.setValueAtTime(safeFreq * 0.032, t);
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc1.frequency);
+        lfoGain.connect(osc2.frequency);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(3600, t);
+        peak = 0.18 * vel;
+        attack = 0.024;
+        sustainRatio = 0.72;
+        break;
+
+      case 'honky_tonk':
+        // Detuned ragtime saloon tack-piano!
+        osc1.type = 'triangle';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(safeFreq * 0.993, t);
+        osc2.frequency.setValueAtTime(safeFreq * 1.008, t);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.min(5800, safeFreq * 5.0), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(480, safeFreq * 2.0), t + safeDur);
+        filter.Q.setValueAtTime(1.6, t);
+        peak = 0.17 * vel;
+        attack = 0.003;
+        sustainRatio = 0.28;
+        break;
+
+      case 'steel_drum':
+        // Sunny tropical Caribbean steel-pan with metallic tuned 2x & 2.98x overtones!
+        osc1.type = 'triangle';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sine';
+        osc3 = ctx.createOscillator();
+        osc3.type = 'sine';
+        osc1.frequency.setValueAtTime(safeFreq, t);
+        osc2.frequency.setValueAtTime(Math.min(7200, safeFreq * 2.0), t);
+        osc3.frequency.setValueAtTime(Math.min(7800, safeFreq * 2.98), t);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.min(7400, safeFreq * 6.0), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(600, safeFreq * 2.6), t + safeDur);
+        filter.Q.setValueAtTime(2.0, t);
+        peak = 0.15 * vel;
+        attack = 0.004;
+        sustainRatio = 0.34;
+        break;
+
+      case 'vocoder_square':
+        // Retro 80s space-synthwave vocoder square + sub-octave formant sweep!
+        osc1.type = 'square';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(safeFreq, t);
+        osc2.frequency.setValueAtTime(Math.max(55, safeFreq * 0.5), t);
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(Math.max(220, safeFreq * 1.4), t);
+        filter.frequency.linearRampToValueAtTime(
+          Math.min(5200, safeFreq * 3.8),
+          t + Math.min(0.04, safeDur * 0.4),
+        );
+        filter.frequency.exponentialRampToValueAtTime(Math.max(260, safeFreq * 1.8), t + safeDur);
+        filter.Q.setValueAtTime(3.6, t);
+        peak = 0.2 * vel;
+        attack = 0.008;
+        sustainRatio = 0.62;
+        break;
+
+      case 'saw_riff':
+        // Aggressive WaveShaper-driven industrial/metal sawtooth riff!
+        osc1.type = 'sawtooth';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(safeFreq * 0.994, t);
+        osc2.frequency.setValueAtTime(safeFreq * 1.007, t);
+        shaper = ctx.createWaveShaper();
+        shaper.curve = this.softClipCurve;
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.min(6800, safeFreq * 6.2), t);
+        filter.Q.setValueAtTime(2.8, t);
+        peak = 0.13 * vel;
+        attack = 0.005;
+        sustainRatio = 0.6;
+        break;
+
+      case 'glockenspiel':
+        // Crystalline icy glockenspiel bar with metallic 2.756x partial!
+        osc1.type = 'sine';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sine';
+        osc1.frequency.setValueAtTime(safeFreq, t);
+        osc2.frequency.setValueAtTime(Math.min(8200, safeFreq * 2.756), t);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(8400, t);
+        peak = 0.15 * vel;
+        attack = 0.002;
+        sustainRatio = 0.26;
+        break;
+
+      case 'music_box':
+        // Delicate eerie wind-up music-box tine!
+        osc1.type = 'sine';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(safeFreq, t);
+        osc2.frequency.setValueAtTime(Math.min(8400, safeFreq * 4.0), t);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(6800, t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(800, safeFreq * 1.8), t + safeDur);
+        peak = 0.13 * vel;
+        attack = 0.002;
+        sustainRatio = 0.22;
+        break;
+
+      case 'war_horn':
+        // Massive saturated low-mid adrenaline war-horn synth!
+        osc1.type = 'sawtooth';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'sawtooth';
+        osc1.frequency.setValueAtTime(safeFreq * 0.992, t);
+        osc2.frequency.setValueAtTime(safeFreq * 1.009, t);
+        shaper = ctx.createWaveShaper();
+        shaper.curve = this.softClipCurve;
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.max(240, safeFreq * 1.3), t);
+        filter.frequency.linearRampToValueAtTime(
+          Math.min(6400, safeFreq * 5.6),
+          t + Math.min(0.055, safeDur * 0.45),
+        );
+        filter.Q.setValueAtTime(3.0, t);
+        peak = 0.14 * vel;
+        attack = 0.022;
+        sustainRatio = 0.72;
+        break;
+
+      case 'wah_lead':
+        // Hyperactive slapstick auto-wah funky lead!
+        osc1.type = 'sawtooth';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'square';
+        osc1.frequency.setValueAtTime(safeFreq * 0.94, t);
+        osc1.frequency.exponentialRampToValueAtTime(safeFreq, t + 0.018);
+        osc2.frequency.setValueAtTime(safeFreq * 1.005, t);
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(Math.max(240, safeFreq * 1.3), t);
+        filter.frequency.exponentialRampToValueAtTime(
+          Math.min(5800, safeFreq * 5.2),
+          t + Math.min(0.032, safeDur * 0.35),
+        );
+        filter.frequency.exponentialRampToValueAtTime(Math.max(260, safeFreq * 1.6), t + safeDur);
+        filter.Q.setValueAtTime(5.4, t);
         peak = 0.21 * vel;
-        attack = 0.012;
+        attack = 0.006;
+        break;
+
+      case 'warped_lead':
+        // Uncanny detuned mirror-warped fluttering lead for Boss Doppel!
+        osc1.type = 'sawtooth';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(safeFreq * 0.982, t);
+        osc2.frequency.setValueAtTime(safeFreq * 1.019, t);
+        lfo = ctx.createOscillator();
+        lfoGain = ctx.createGain();
+        lfo.type = 'sine';
+        lfo.frequency.setValueAtTime(7.2, t);
+        lfoGain.gain.setValueAtTime(safeFreq * 0.024, t);
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc1.frequency);
+        lfoGain.connect(osc2.frequency);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.min(4400, safeFreq * 4.2), t);
+        filter.Q.setValueAtTime(3.8, t);
+        peak = 0.15 * vel;
+        attack = 0.01;
+        break;
+
+      case 'harpsichord':
+        // Bright spiky plucked baroque harpsichord!
+        osc1.type = 'sawtooth';
+        osc2 = ctx.createOscillator();
+        osc2.type = 'square';
+        osc1.frequency.setValueAtTime(safeFreq, t);
+        osc2.frequency.setValueAtTime(Math.min(7200, safeFreq * 2.0), t);
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.min(6400, safeFreq * 5.5), t);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(520, safeFreq * 1.9), t + safeDur);
+        filter.Q.setValueAtTime(2.0, t);
+        peak = 0.13 * vel;
+        attack = 0.002;
+        sustainRatio = 0.28;
         break;
 
       case 'accordion_bouncy':
@@ -1188,26 +2774,50 @@ export class ProceduralSynth {
         break;
     }
 
-    env.gain.setValueAtTime(0.0001, t);
-    env.gain.linearRampToValueAtTime(peak, t + attack);
-    env.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * 0.55), t + dur * 0.65);
-    env.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.025);
+    const safeAttack = Math.min(attack, safeDur * 0.35);
+    const midT = Math.max(t + safeAttack + 0.004, t + safeDur * 0.65);
+    const endT = Math.max(midT + 0.006, t + safeDur + 0.025);
 
-    osc1.connect(filter);
-    if (osc2) osc2.connect(filter);
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(Math.max(0.0002, peak), t + safeAttack);
+    env.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * sustainRatio), midT);
+    env.gain.exponentialRampToValueAtTime(0.0001, endT);
+
+    if (shaper) {
+      osc1.connect(shaper);
+      if (osc2) osc2.connect(shaper);
+      if (osc3) osc3.connect(shaper);
+      shaper.connect(filter);
+    } else {
+      osc1.connect(filter);
+      if (osc2) osc2.connect(filter);
+      if (osc3) osc3.connect(filter);
+    }
     filter.connect(env);
     env.connect(this.musicSequencerGain);
 
     osc1.start(t);
-    osc1.stop(t + dur + 0.035);
+    osc1.stop(endT + 0.01);
     if (osc2) {
       osc2.start(t);
-      osc2.stop(t + dur + 0.035);
+      osc2.stop(endT + 0.01);
+    }
+    if (osc3) {
+      osc3.start(t);
+      osc3.stop(endT + 0.01);
+    }
+    if (lfo) {
+      lfo.start(t);
+      lfo.stop(endT + 0.01);
     }
 
     osc1.onended = () => {
       osc1.disconnect();
       if (osc2) osc2.disconnect();
+      if (osc3) osc3.disconnect();
+      if (lfo) lfo.disconnect();
+      if (lfoGain) lfoGain.disconnect();
+      if (shaper) shaper.disconnect();
       filter.disconnect();
       env.disconnect();
     };
@@ -1220,42 +2830,85 @@ export class ProceduralSynth {
     t: number,
     dur: number,
     vel: number,
+    customIntervals?: readonly number[],
   ): void {
     const ctx = this.ctx;
-    const intervals = style === 'power_fifth' ? [0, 4] : [0, 2, 4];
+    const safeDur = Math.max(0.03, dur);
+    const intervals =
+      customIntervals ??
+      (style === 'power_fifth'
+        ? [0, 4]
+        : style === 'rhodes_lounge'
+          ? [0, 2, 4, 6]
+          : [0, 2, 4]);
     const oscType: OscillatorType =
-      style === 'marimba_arp'
+      style === 'marimba_arp' || style === 'organ_swell' || style === 'rhodes_lounge'
         ? 'triangle'
-        : style === 'organ_swell'
-          ? 'triangle'
-          : style === 'funk_clav'
-            ? 'square'
-            : 'sawtooth';
+        : style === 'funk_clav'
+          ? 'square'
+          : 'sawtooth';
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(style === 'funk_clav' ? 2800 : 2100, t);
-    filter.frequency.exponentialRampToValueAtTime(750, t + dur);
+    const startCut =
+      style === 'harpsichord_clav'
+        ? 4200
+        : style === 'synthwave_arp'
+          ? 3600
+          : style === 'funk_clav'
+            ? 2800
+            : style === 'rhodes_lounge'
+              ? 1900
+              : 2100;
+    const endCut = style === 'harpsichord_clav' ? 1100 : style === 'synthwave_arp' ? 950 : 750;
+    filter.frequency.setValueAtTime(startCut, t);
+    filter.frequency.exponentialRampToValueAtTime(endCut, t + safeDur);
+    if (style === 'synthwave_arp' || style === 'harpsichord_clav') {
+      filter.Q.setValueAtTime(2.2, t);
+    }
 
     const env = ctx.createGain();
-    const peak = (style === 'power_fifth' ? 0.095 : 0.07) * vel;
+    const basePeak =
+      style === 'power_fifth'
+        ? 0.095
+        : style === 'rhodes_lounge'
+          ? 0.068
+          : style === 'harpsichord_clav'
+            ? 0.075
+            : 0.07;
+    const peak = basePeak * vel;
+    const attack = style === 'harpsichord_clav' ? 0.004 : style === 'rhodes_lounge' ? 0.018 : 0.01;
+    const safeAttack = Math.min(attack, safeDur * 0.35);
+    const endT = Math.max(t + safeAttack + 0.01, t + safeDur + 0.02);
+
     env.gain.setValueAtTime(0.0001, t);
-    env.gain.linearRampToValueAtTime(peak, t + 0.01);
-    env.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.02);
+    env.gain.linearRampToValueAtTime(Math.max(0.0002, peak), t + safeAttack);
+    env.gain.exponentialRampToValueAtTime(0.0001, endT);
 
     filter.connect(env);
     env.connect(this.musicSequencerGain);
+
+    const stagger =
+      style === 'marimba_arp'
+        ? 0.022
+        : style === 'synthwave_arp'
+          ? 0.028
+          : style === 'harpsichord_clav'
+            ? 0.012
+            : 0;
 
     const oscs: OscillatorNode[] = [];
     for (let i = 0; i < intervals.length; i++) {
       const midi = scaleDegreeToMidi(meta.rootMidi, meta.scale, deg + intervals[i]);
       const osc = ctx.createOscillator();
       osc.type = oscType;
-      const offset = style === 'marimba_arp' ? i * 0.022 : 0;
-      osc.frequency.setValueAtTime(midiToFreq(midi), t + offset);
+      const offset = i * stagger;
+      const noteStart = t + offset;
+      const noteStop = Math.max(noteStart + 0.02, endT + 0.015);
+      osc.frequency.setValueAtTime(midiToFreq(midi), noteStart);
       osc.connect(filter);
-      osc.start(t + offset);
-      osc.stop(t + dur + 0.035);
+      osc.start(noteStart);
+      osc.stop(noteStop);
       oscs.push(osc);
     }
 
