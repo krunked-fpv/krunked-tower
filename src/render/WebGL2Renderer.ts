@@ -2050,10 +2050,10 @@ export class WebGL2Renderer implements RendererAPI {
       ) {
         const cleanLabel = prop.label.slice(0, 24);
         const bannerW = Math.max(88, cleanLabel.length * 9 + 18);
-        const bannerY = prop.kind === 'tutorial_sign' ? sy - 70 : sy - 112;
-        this.pushColoredRect(sx - bannerW * 0.5, bannerY - 4, bannerW, 20, 0.1, 0.07, 0.14, 0.92);
-        this.pushRectOutline(sx - bannerW * 0.5, bannerY - 4, bannerW, 20, 2, 1, 0.84, 0.28, 1);
-        this.pushBitmapText(cleanLabel, sx, bannerY, 1, 1, 0.96, 0.75, 1);
+        const bannerY = prop.kind === 'tutorial_sign' ? sy - 72 : sy - 114;
+        this.pushColoredRect(sx - bannerW * 0.5, bannerY - 6, bannerW, 24, 0.1, 0.07, 0.14, 0.92);
+        this.pushRectOutline(sx - bannerW * 0.5, bannerY - 6, bannerW, 24, 2, 1, 0.84, 0.28, 1);
+        this.pushBitmapText(cleanLabel, sx, bannerY - 1, 1, 1, 0.96, 0.75, 1);
       }
     }
   }
@@ -2930,14 +2930,14 @@ export class WebGL2Renderer implements RendererAPI {
       ) {
         const cleanLabel = pr.label.slice(0, 24);
         const bannerW = Math.max(88, cleanLabel.length * 9 + 18);
-        const bannerY = pr.kind === 'tutorial_sign' ? sy - 70 : sy - 112;
+        const bannerY = pr.kind === 'tutorial_sign' ? sy - 72 : sy - 114;
         const bx0 = Math.round(sx - bannerW * 0.5);
-        const by0 = Math.round(bannerY - 4);
+        const by0 = Math.round(bannerY - 6);
         ctx.fillStyle = 'rgba(26, 18, 36, 0.92)';
-        ctx.fillRect(bx0, by0, bannerW, 20);
+        ctx.fillRect(bx0, by0, bannerW, 24);
         ctx.strokeStyle = '#ffd647';
         ctx.lineWidth = 2;
-        ctx.strokeRect(bx0, by0, bannerW, 20);
+        ctx.strokeRect(bx0, by0, bannerW, 24);
         this.drawBitmapText2D(ctx, cleanLabel, sx, bannerY, 1);
       }
     }
