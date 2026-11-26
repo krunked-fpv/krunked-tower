@@ -1,5 +1,9 @@
 # Krunked Tower
 
+[![Krunked Tower CI](https://github.com/krunked-fpv/krunked-tower/actions/workflows/ci.yml/badge.svg)](https://github.com/krunked-fpv/krunked-tower/actions/workflows/ci.yml)
+
+**Play Live:** https://krunked-fpv.github.io/krunked-tower/
+
 A 60 Hz deterministic, hand-inked 90s cartoon 2D kinetic speed-platformer built for Desktop, Xbox/Gamepad, Tesla Chromium, and Mobile Touch.
 
 ## Features
