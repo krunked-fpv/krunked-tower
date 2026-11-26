@@ -5,16 +5,22 @@
 
 import type { BossDef, BossId, RoomDef, RoomThemeId } from '../contracts/index';
 
+interface ArenaOptions {
+  platforms?: Array<{ x: number; y: number; w: number }>;
+  marblePillars?: Array<{ x: number; y: number; h: number }>;
+  pillarGates?: Array<{ x: number; yTop: number; yBot: number }>;
+  slopes?: Array<{ x: number; y: number; ch: '/' | '\\' }>;
+  spawnX?: number;
+  isEscapeChase?: boolean;
+}
+
 function buildArenaRoom(
   id: string,
   name: string,
   theme: RoomThemeId,
   widthTiles: number,
   heightTiles: number,
-  options?: {
-    platforms?: Array<{ x: number; y: number; w: number }>;
-    marblePillars?: Array<{ x: number; y: number; h: number }>;
-  },
+  options?: ArenaOptions,
 ): RoomDef {
   const grid: string[][] = Array.from({ length: heightTiles }, () =>
     Array.from({ length: widthTiles }, () => '.'),
@@ -45,7 +51,7 @@ function buildArenaRoom(
     }
   }
 
-  // Optional breakable marble accents
+  // Optional breakable marble accents / hurdles
   if (options?.marblePillars) {
     for (const mp of options.marblePillars) {
       for (let dy = 0; dy < mp.h; dy++) {
@@ -57,6 +63,26 @@ function buildArenaRoom(
     }
   }
 
+  // Optional escape-flipping pillar gates ('P' = solid until state.escape.active!)
+  if (options?.pillarGates) {
+    for (const pg of options.pillarGates) {
+      for (let ty = pg.yTop; ty <= pg.yBot; ty++) {
+        if (pg.x > 1 && pg.x < widthTiles - 2 && ty > 0 && ty < floorRow) {
+          grid[ty][pg.x] = 'P';
+        }
+      }
+    }
+  }
+
+  // Optional 45-degree speed ramps
+  if (options?.slopes) {
+    for (const sl of options.slopes) {
+      if (sl.x > 1 && sl.x < widthTiles - 2 && sl.y > 1 && sl.y < floorRow) {
+        grid[sl.y][sl.x] = sl.ch;
+      }
+    }
+  }
+
   return {
     id,
     name,
@@ -64,10 +90,11 @@ function buildArenaRoom(
     widthTiles,
     heightTiles,
     rows: grid.map((r) => r.join('')),
-    spawnX: 160,
+    spawnX: options?.spawnX ?? 160,
     spawnY: floorRow * 32,
     doors: [],
     spawns: [],
+    isEscapeChase: options?.isEscapeChase,
   };
 }
 
@@ -87,14 +114,20 @@ export const BOSSES: Record<BossId, BossDef> = {
         hpThreshold: 10,
         name: 'Gallery Warmup',
         speedMult: 1.0,
-        attacks: ['shoulder_charge', 'statue_drop', 'bounce_slam'],
+        attacks: ['shoulder_charge', 'bowling_marble', 'bounce_slam'],
       },
       {
         phase: 2,
         hpThreshold: 5,
         name: 'Masterpiece Frenzy',
         speedMult: 1.32,
-        attacks: ['shoulder_charge', 'bowling_marble', 'statue_drop', 'bounce_slam'],
+        attacks: [
+          'shoulder_charge',
+          'statue_drop',
+          'double_bounce_slam',
+          'bowling_marble',
+          'smug_pose',
+        ],
       },
     ],
     room: buildArenaRoom('boss_artiste_arena', 'Artiste Gallery', 'boss_gallery', 30, 17, {
@@ -121,14 +154,14 @@ export const BOSSES: Record<BossId, BossDef> = {
         hpThreshold: 9,
         name: 'High Noon Showdown',
         speedMult: 1.05,
-        attacks: ['quick_draw', 'dynamite_toss', 'boot_dash'],
+        attacks: ['bazooka_shot', 'dynamite_toss', 'flame_dash'],
       },
       {
         phase: 2,
         hpThreshold: 4,
         name: 'Dynamite Desperado',
         speedMult: 1.35,
-        attacks: ['fan_hammer', 'dynamite_toss', 'flame_sweep', 'boot_dash'],
+        attacks: ['cow_stampede', 'dynamite_volley', 'flame_dash', 'bazooka_shot'],
       },
     ],
     room: buildArenaRoom('boss_cheddar_arena', 'Sundown Canyon', 'boss_canyon', 30, 17, {
@@ -155,14 +188,14 @@ export const BOSSES: Record<BossId, BossDef> = {
         hpThreshold: 8,
         name: 'Prime Time Pranks',
         speedMult: 1.15,
-        attacks: ['skate_blitz', 'bomb_volley', 'spring_pogo'],
+        attacks: ['skate_blitz', 'spring_pogo', 'bomb_toss'],
       },
       {
         phase: 2,
         hpThreshold: 4,
         name: 'Overdrive Broadcast',
-        speedMult: 1.45,
-        attacks: ['skate_blitz', 'bomb_volley', 'spring_pogo', 'air_dive'],
+        speedMult: 1.42,
+        attacks: ['jetpack_dive', 'balloon_barrage', 'minion_spawn', 'skate_blitz'],
       },
     ],
     room: buildArenaRoom('boss_static_arena', 'Broadcast Stage 3', 'boss_studio', 30, 17, {
@@ -189,22 +222,37 @@ export const BOSSES: Record<BossId, BossDef> = {
         phase: 1,
         hpThreshold: 6,
         name: 'Mirror Mach',
-        speedMult: 1.15,
-        attacks: ['copy_dash', 'head_toss', 'super_slam'],
+        speedMult: 1.18,
+        attacks: ['copy_dash', 'super_slam', 'head_toss', 'clone_surge'],
       },
       {
         phase: 2,
-        hpThreshold: 3,
-        name: 'Melty Meltdown',
-        speedMult: 1.45,
-        attacks: ['copy_dash', 'head_toss', 'super_slam', 'double_lunge'],
+        hpThreshold: 0,
+        name: 'Hallway Escape Chase',
+        speedMult: 1.48,
+        attacks: ['hallway_chase'],
       },
     ],
-    room: buildArenaRoom('boss_doppel_arena', 'Mirrored Kitchen Hall', 'boss_doppel', 34, 17, {
+    // Phase 1 fights inside cols 0..30; when HP hits 0, the Pillar Gate ('P') at col 30 shatters
+    // and unveils a high-speed 54-tile Hallway Escape Chase to the right exit door!
+    room: buildArenaRoom('boss_doppel_arena', 'Mirrored Kitchen Hall', 'boss_doppel', 84, 17, {
       platforms: [
-        { x: 8, y: 10, w: 5 },
-        { x: 21, y: 10, w: 5 },
+        // Phase 1 battle platforms
+        { x: 6, y: 10, w: 5 },
+        { x: 19, y: 10, w: 5 },
+        // Phase 2 hallway escape catwalks
+        { x: 35, y: 10, w: 5 },
+        { x: 47, y: 9, w: 6 },
+        { x: 60, y: 10, w: 5 },
+        { x: 71, y: 10, w: 5 },
       ],
+      pillarGates: [{ x: 30, yTop: 1, yBot: 13 }],
+      marblePillars: [
+        { x: 41, y: 13, h: 2 },
+        { x: 55, y: 13, h: 2 },
+        { x: 68, y: 13, h: 2 },
+      ],
+      isEscapeChase: true,
     }),
   },
 
@@ -225,21 +273,21 @@ export const BOSSES: Record<BossId, BossDef> = {
         hpThreshold: 8,
         name: 'Phase 1 — Mega-Crust',
         speedMult: 1.0,
-        attacks: ['hover_slam', 'cog_shower', 'swoop_charge'],
+        attacks: ['moon_drop', 'moon_swoop', 'moon_drop', 'moon_cog'],
       },
       {
         phase: 2,
         hpThreshold: 8,
         name: 'Phase 2 — Lord Dough',
         speedMult: 1.25,
-        attacks: ['tv_toss', 'spring_charge', 'cog_shower', 'hover_slam'],
+        attacks: ['tv_toss', 'cog_shower', 'gatling_pellet', 'boot_stomp'],
       },
       {
         phase: 3,
         hpThreshold: 6,
-        name: 'Phase 3 — Tower Showdown',
-        speedMult: 1.5,
-        attacks: ['tv_toss', 'swoop_charge', 'hover_slam', 'final_barrage'],
+        name: 'Phase 3 — Boss Rush Finale',
+        speedMult: 1.48,
+        attacks: ['cameo_artiste', 'cameo_cheddar', 'cameo_static'],
       },
     ],
     room: buildArenaRoom('boss_summit_arena', 'Krunked Tower Summit', 'boss_summit', 32, 17, {
