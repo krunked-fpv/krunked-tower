@@ -2139,7 +2139,7 @@ function stepDoppelChaseEscape(
   boss.chaseProgress = Math.max(boss.chaseProgress, pct);
 
   // Victory when player reaches the right escape door / 100% chaseProgress!
-  if (boss.chaseProgress >= 100 || player.x >= exitX - 24) {
+  if (boss.chaseProgress >= 98 || player.x >= exitX - 56) {
     boss.chaseProgress = 100;
     boss.aiState = 'defeated';
     boss.stateTimer = 34;

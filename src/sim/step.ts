@@ -582,10 +582,6 @@ export function stepSim(state: SimState, input: InputFrame): SimEvent[] {
     return state.events;
   }
 
-  if (state.screen === 'stage') {
-    state.stageStats.elapsedTicks++;
-  }
-
   // Room gate / alarm timers
   if (state.room.outletGateTimer > 0) state.room.outletGateTimer--;
   if (state.room.alarmActiveTicks > 0) state.room.alarmActiveTicks--;

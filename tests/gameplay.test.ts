@@ -255,9 +255,33 @@ describe('All 5 Tower Bosses (HP Oracle, Phase Shifts, Victory & Defeat)', () =>
       let sawPhase2 = false;
       let sawPhase3 = false;
 
-      // Deal lethal hits respecting invuln ticks until defeated
+      // Deal lethal hits respecting invuln ticks & Phase 2 Hallway Chase until defeated
       let safety = 0;
-      while (state.boss && state.boss.aiState !== 'defeated' && safety < 50) {
+      let sawDoppelChase = false;
+      while (state.boss && state.boss.aiState !== 'defeated' && safety < 300) {
+        if (state.boss.aiState === 'phase_shift') {
+          state.hitstopTicks = 0;
+          stepSim(state, neutral);
+          safety++;
+          continue;
+        }
+        if (state.boss.aiState === 'chase_escape') {
+          sawDoppelChase = true;
+          sawPhase2 = true;
+          // Sprint right down the 84-tile Escape Hallway (jumping over hurdles) to reach the Exit Door!
+          for (let t = 0; t < 480 && state.boss && state.boss.aiState === 'chase_escape'; t++) {
+            state.player.invulnTicks = 10;
+            const jumpNow = t % 45 === 10;
+            stepSim(state, {
+              ...neutral,
+              moveX: 1,
+              machHeld: true,
+              jumpPressed: jumpNow,
+              jumpHeld: jumpNow,
+            });
+          }
+          break;
+        }
         state.boss.invulnTicks = 0;
         state.hitstopTicks = 0;
         state.events = [];
@@ -269,6 +293,9 @@ describe('All 5 Tower Bosses (HP Oracle, Phase Shifts, Victory & Defeat)', () =>
       }
 
       expect(sawPhase2).toBe(true);
+      if (id === 'b_doppel') {
+        expect(sawDoppelChase).toBe(true);
+      }
       if (id === 'b_megacrust') {
         expect(sawPhase3).toBe(true);
       }

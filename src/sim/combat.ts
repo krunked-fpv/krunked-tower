@@ -75,28 +75,18 @@ export function damageEnemy(
     enemy.vx = knockVx;
     enemy.vy = knockVy;
 
-    state.stageStats.enemiesDefeated++;
-    p.superchargeKills++;
-
-    if (
-      p.superchargeKills >= ENGINE_CONSTANTS.SUPER_TAUNT_KILLS &&
-      !p.superTauntReady
-    ) {
-      p.superTauntReady = true;
-      state.events.push(
-        { type: 'callout', text: 'SUPER TAUNT READY!', durationTicks: 90 },
-        {
-          type: 'particle',
-          kind: 'starburst',
-          x: p.x,
-          y: p.y - 24,
-          count: 10,
-          color: '#ffee55',
-        },
-      );
-    }
-
+    const wasReady = p.superTauntReady;
     registerKillCombo(state, 100, cx, cy);
+    if (!wasReady && p.superTauntReady) {
+      state.events.push({
+        type: 'particle',
+        kind: 'starburst',
+        x: p.x,
+        y: p.y - 24,
+        count: 10,
+        color: '#ffee55',
+      });
+    }
     state.hitstopTicks = Math.max(state.hitstopTicks, 2);
     state.shakeMag = Math.max(state.shakeMag, 3);
     state.shakeTimer = Math.max(state.shakeTimer, 5);
