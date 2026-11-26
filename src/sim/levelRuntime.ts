@@ -13,6 +13,7 @@ import type {
   PickupState,
   PropState,
   RoomDef,
+  RoomEntitySpawn,
   SimState,
   StageId,
   TileTypeValue,
@@ -24,7 +25,14 @@ import {
   getLevelDef,
 } from '../data/index';
 import { createBossState } from './bosses';
-import { getPlayerBox, moveAndCollideBox } from './collision';
+import {
+  breakTileAt,
+  getPlayerBox,
+  getTileAt,
+  isSolidTile,
+  moveAndCollideBox,
+} from './collision';
+import { damageEnemy } from './combat';
 import { spawnRoomEnemies } from './enemies';
 import { addScore, finalizeStageRank, refillCombo } from './scoring';
 import { applyTransformation, clearTransformation } from './transformations';
@@ -113,6 +121,18 @@ function getPropDimensions(kind: PropState['kind']): { w: number; h: number } {
       return { w: 32, h: 32 };
     case 'golf_goal':
       return { w: 48, h: 54 };
+    case 'dash_button':
+      return { w: 42, h: 36 };
+    case 'taxi_warp':
+      return { w: 56, h: 48 };
+    case 'alarm_sensor':
+      return { w: 42, h: 56 };
+    case 'time_terminal':
+      return { w: 44, h: 54 };
+    case 'buddy_switch':
+      return { w: 44, h: 48 };
+    case 'transform_totem':
+      return { w: 42, h: 50 };
     default:
       return { w: 40, h: 48 };
   }
@@ -170,6 +190,79 @@ function resetPlayerKinematics(state: SimState, x: number, y: number): void {
   p.grabbedEnemyId = null;
 }
 
+function createPropFromSpawn(
+  state: SimState,
+  roomDef: RoomDef,
+  sp: RoomEntitySpawn,
+  spawnIndex: number,
+): PropState | null {
+  if (!sp.propKind) return null;
+  const dims = getPropDimensions(sp.propKind);
+  let active = true;
+  let triggered = false;
+
+  // Sync persistent stage progress so revisited rooms stay coherent
+  if (sp.propKind === 'toppin_cage' && sp.index !== undefined) {
+    if (state.stageStats.toppinsCollected[sp.index]) {
+      active = false;
+      triggered = true;
+    }
+  } else if (sp.propKind === 'gerry_janitor' && state.stageStats.gerryFound) {
+    active = false;
+    triggered = true;
+  } else if (sp.propKind === 'treasure_chest' && state.stageStats.treasureCollected) {
+    active = false;
+    triggered = true;
+  } else if (sp.propKind === 'pillar_chronos' && state.escape.pillarBroken) {
+    active = false;
+    triggered = true;
+  } else if (sp.propKind === 'time_terminal') {
+    const key = `term:${roomDef.id}:${spawnIndex}`;
+    if (state.collectedIds.includes(key)) {
+      active = false;
+      triggered = true;
+    }
+  } else if (sp.propKind === 'golf_ball' || sp.propKind === 'golf_goal') {
+    const holeKey = `golf:${roomDef.id}:${sp.index ?? 0}`;
+    if (state.collectedIds.includes(holeKey)) {
+      active = false;
+      triggered = true;
+    }
+  } else if (sp.propKind === 'alarm_sensor') {
+    const alarmKey = `alarm_broken:${roomDef.id}:${spawnIndex}`;
+    if (state.collectedIds.includes(alarmKey)) {
+      active = false;
+      triggered = true;
+    }
+  }
+
+  return {
+    id: state.nextEntityId++,
+    kind: sp.propKind,
+    x: sp.x,
+    y: sp.y,
+    width: dims.w,
+    height: dims.h,
+    active,
+    triggered,
+    index: sp.index ?? spawnIndex,
+    label: sp.label,
+    targetStageId: sp.targetStageId,
+    targetBossId: sp.targetBossId,
+    targetFloor: sp.targetFloor,
+    targetRoomIndex: sp.targetRoomIndex,
+    targetX: sp.targetX,
+    targetY: sp.targetY,
+    transformation: sp.transformation,
+    riderTarget: sp.riderTarget,
+    timerTicks: 0,
+    vx: 0,
+    vy: 0,
+    parCount: sp.propKind === 'golf_ball' ? 3 : undefined,
+    strokes: sp.propKind === 'golf_ball' ? 0 : undefined,
+  };
+}
+
 function populateRoomEntities(state: SimState, roomDef: RoomDef): void {
   state.enemies = [];
   state.projectiles = [];
@@ -179,10 +272,11 @@ function populateRoomEntities(state: SimState, roomDef: RoomDef): void {
   for (let i = 0; i < roomDef.spawns.length; i++) {
     const sp = roomDef.spawns[i];
     if (sp.kind === 'pickup' && sp.pickupKind) {
+      if (sp.escapeOnly && !state.escape.active) continue;
       const key = `pickup:${roomDef.id}:${i}`;
       if (state.collectedIds.includes(key)) continue;
 
-      // Prevent pickups from spawning overlapped inside solid/breakable/pillar geometry
+      // Prevent pickups from spawning overlapped inside solid/breakable/pillar/hazard geometry
       const tx = Math.floor(sp.x / ENGINE_CONSTANTS.TILE_SIZE);
       const ty = Math.floor(sp.y / ENGINE_CONSTANTS.TILE_SIZE);
       if (
@@ -198,7 +292,13 @@ function populateRoomEntities(state: SimState, roomDef: RoomDef): void {
           occ === TileType.BREAK_METAL ||
           occ === TileType.PILLAR_BLOCK_CLOSED ||
           occ === TileType.PILLAR_BLOCK_OPEN ||
-          occ === TileType.ICE_SOLID
+          occ === TileType.ICE_SOLID ||
+          occ === TileType.CONVEYOR_RIGHT ||
+          occ === TileType.CONVEYOR_LEFT ||
+          occ === TileType.CHEESE_STICK_WALL ||
+          occ === TileType.BREAK_OUTLET_GATE ||
+          occ === TileType.LAVA_HAZARD ||
+          occ === TileType.SPIKE_HAZARD
         ) {
           continue;
         }
@@ -232,59 +332,11 @@ function populateRoomEntities(state: SimState, roomDef: RoomDef): void {
       };
       state.pickups.push(pickup);
     } else if (sp.kind === 'prop' && sp.propKind) {
-      const dims = getPropDimensions(sp.propKind);
-      let active = true;
-      let triggered = false;
-
-      // Sync persistent stage progress so revisited rooms stay coherent
-      if (sp.propKind === 'toppin_cage' && sp.index !== undefined) {
-        if (state.stageStats.toppinsCollected[sp.index]) {
-          active = false;
-          triggered = true;
-        }
-      } else if (sp.propKind === 'gerry_janitor' && state.stageStats.gerryFound) {
-        active = false;
-        triggered = true;
-      } else if (sp.propKind === 'treasure_chest' && state.stageStats.treasureCollected) {
-        active = false;
-        triggered = true;
-      } else if (sp.propKind === 'pillar_chronos' && state.escape.pillarBroken) {
-        active = false;
-        triggered = true;
-      } else if (sp.propKind === 'time_terminal') {
-        const key = `term:${roomDef.id}:${i}`;
-        if (state.collectedIds.includes(key)) {
-          active = false;
-          triggered = true;
-        }
+      if (sp.escapeOnly && !state.escape.active) continue;
+      const prop = createPropFromSpawn(state, roomDef, sp, i);
+      if (prop) {
+        state.props.push(prop);
       }
-
-      const prop: PropState = {
-        id: state.nextEntityId++,
-        kind: sp.propKind,
-        x: sp.x,
-        y: sp.y,
-        width: dims.w,
-        height: dims.h,
-        active,
-        triggered,
-        index: sp.index,
-        label: sp.label,
-        targetStageId: sp.targetStageId,
-        targetBossId: sp.targetBossId,
-        targetFloor: sp.targetFloor,
-        targetRoomIndex: sp.targetRoomIndex,
-        targetX: sp.targetX,
-        targetY: sp.targetY,
-        transformation: sp.transformation,
-        riderTarget: sp.riderTarget,
-        timerTicks: 0,
-        vx: 0,
-        vy: 0,
-        parCount: sp.propKind === 'golf_ball' ? 3 : undefined,
-        strokes: sp.propKind === 'golf_ball' ? 0 : undefined,
-      };
-      state.props.push(prop);
     }
   }
 
@@ -358,7 +410,8 @@ export function loadStageRoom(
   if (!state.visitedRooms.includes(clampedIdx)) {
     state.visitedRooms.push(clampedIdx);
     if (level.secretGauntletMode && clampedIdx > 0) {
-      addScore(state, 500, spawnX ?? roomDef.spawnX, (spawnY ?? roomDef.spawnY) - 48);
+      addScore(state, 1500, spawnX ?? roomDef.spawnX, (spawnY ?? roomDef.spawnY) - 48);
+      refillCombo(state);
     }
   }
 
@@ -376,6 +429,9 @@ export function loadStageRoom(
   // Automatic Gusto & Chonks rider zone handling
   if (roomDef.allowRider === 'gusto_chonks') {
     if (state.player.rider !== 'gusto_chonks') {
+      if (state.player.transformation !== 'none' && state.player.transformation !== 'shotgun') {
+        clearTransformation(state);
+      }
       state.player.rider = 'gusto_chonks';
       state.events.push({
         type: 'callout',
@@ -598,16 +654,43 @@ export function startEscape(state: SimState): void {
     }
   }
 
-  // Spawn escape-only enemies in current room
+  // Spawn escape-only enemies AND escape-only props (e.g. Silent Arcade Shotgun Payback Totem!)
   const roomDef = level.rooms[state.roomIndex];
+  let unlockedShotgunPayback = false;
   if (roomDef) {
     spawnRoomEnemies(state, roomDef, true);
+    for (let i = 0; i < roomDef.spawns.length; i++) {
+      const sp = roomDef.spawns[i];
+      if (sp.kind !== 'prop' || !sp.escapeOnly || !sp.propKind) continue;
+      const alreadyExists = state.props.some(
+        (existing) =>
+          existing.kind === sp.propKind &&
+          Math.abs(existing.x - sp.x) < 4 &&
+          Math.abs(existing.y - sp.y) < 4,
+      );
+      if (alreadyExists) continue;
+      const prop = createPropFromSpawn(state, roomDef, sp, i);
+      if (prop) {
+        state.props.push(prop);
+        state.events.push({
+          type: 'particle',
+          kind: 'starburst',
+          x: prop.x,
+          y: prop.y - 24,
+          count: 14,
+          color: '#ffbe0b',
+        });
+        if (prop.kind === 'transform_totem' && prop.transformation === 'shotgun') {
+          unlockedShotgunPayback = true;
+        }
+      }
+    }
   }
 
   state.hitstopTicks = Math.max(state.hitstopTicks, 6);
   state.shakeMag = Math.max(state.shakeMag, 10);
   state.shakeTimer = Math.max(state.shakeTimer, 28);
-  state.tv.calloutText = 'KRUNK TIME!';
+  state.tv.calloutText = unlockedShotgunPayback ? 'PAYBACK SHOTGUN UNLOCKED!' : 'KRUNK TIME!';
   state.tv.calloutTimer = 120;
 
   state.events.push({ type: 'sfx', sfx: 'pillar_smash' });
@@ -616,7 +699,9 @@ export function startEscape(state: SimState): void {
   state.events.push({ type: 'rumble', strong: 0.9, weak: 0.6, durationMs: 280 });
   state.events.push({
     type: 'callout',
-    text: 'KRUNK TIME! RUN BACK TO THE EXIT!',
+    text: unlockedShotgunPayback
+      ? 'KRUNK TIME! GRAB THE SHOTGUN — PAYBACK TIME!'
+      : 'KRUNK TIME! RUN BACK TO THE EXIT!',
     durationTicks: 120,
   });
 }
@@ -640,8 +725,10 @@ export function triggerLap2(state: SimState): void {
   addScore(state, ENGINE_CONSTANTS.LAP2_PTS, state.player.x, state.player.y - 54);
   refillCombo(state);
 
-  // Respawn enemies for Lap 2 carnage!
-  state.collectedIds = state.collectedIds.filter((k) => !k.startsWith('enemy:'));
+  // Respawn enemies (and Time Terminals in WAR mode) for Lap 2 carnage!
+  state.collectedIds = state.collectedIds.filter(
+    (k) => !k.startsWith('enemy:') && !(level.warTimerMode && k.startsWith('term:')),
+  );
 
   state.events.push({ type: 'sfx', sfx: 'lap2_enter' });
   state.events.push({ type: 'music', track: 'escape_lap2', forceRestart: true });
@@ -660,7 +747,7 @@ export function triggerLap2(state: SimState): void {
     durationTicks: 120,
   });
 
-  // Warp player to the Pillar room (or Room 0 in WAR mode)
+  // Warp player safely to the Pillar room (or Room 0 in WAR mode)
   let targetRoomIdx = 0;
   if (!level.warTimerMode) {
     const pillarRoomIdx = level.rooms.findIndex((r) =>
@@ -670,8 +757,23 @@ export function triggerLap2(state: SimState): void {
   }
   const destRoom = level.rooms[targetRoomIdx];
   const pillarSpawn = destRoom.spawns.find((s) => s.propKind === 'pillar_chronos');
-  const warpX = pillarSpawn ? Math.max(128, pillarSpawn.x - 160) : destRoom.spawnX;
-  const warpY = pillarSpawn ? pillarSpawn.y : destRoom.spawnY;
+  let warpX = destRoom.spawnX;
+  let warpY = destRoom.spawnY;
+
+  if (pillarSpawn) {
+    const candidateX = Math.max(128, pillarSpawn.x - 160);
+    const candidateY = pillarSpawn.y;
+    const tempParsed = parseRoomDef(destRoom);
+    const tx = Math.floor(candidateX / T);
+    const bodyTy = Math.floor((candidateY - 22) / T);
+    const floorTy = Math.floor((candidateY + 2) / T);
+    const bodyTile = getTileAt(tempParsed, tx, bodyTy, true);
+    const floorTile = getTileAt(tempParsed, tx, floorTy, true);
+    if (!isSolidTile(bodyTile) && (isSolidTile(floorTile) || floorTile === TileType.ONE_WAY)) {
+      warpX = candidateX;
+      warpY = candidateY;
+    }
+  }
 
   loadStageRoom(state, targetRoomIdx, warpX, warpY);
 }
@@ -689,6 +791,196 @@ function overlapsBox(
   return ax2 > bx1 && ax1 < bx2 && ay2 > by1 && ay1 < by2;
 }
 
+function meltIceTileAt(state: SimState, tx: number, ty: number): boolean {
+  const room = state.room;
+  if (tx <= 0 || tx >= room.widthTiles - 1 || ty <= 0 || ty >= room.heightTiles - 1) {
+    return false;
+  }
+  const idx = ty * room.widthTiles + tx;
+  if (room.brokenMask[idx] === 1) return false;
+  if (room.tiles[idx] !== TileType.ICE_SOLID) return false;
+
+  room.brokenMask[idx] = 1;
+  const cx = tx * T + T * 0.5;
+  const cy = ty * T + T * 0.5;
+  addScore(state, 15, cx, cy);
+  state.shakeMag = Math.max(state.shakeMag, 2.2);
+  state.shakeTimer = Math.max(state.shakeTimer, 4);
+  state.events.push(
+    { type: 'sfx', sfx: 'block_marble', pitchJitter: 0.14 },
+    { type: 'particle', kind: 'flame', x: cx, y: cy, count: 5, color: '#ff6b2b' },
+    { type: 'particle', kind: 'smoke', x: cx, y: cy, count: 4, color: '#c8f0ff' },
+  );
+  return true;
+}
+
+/**
+ * Allows Firemouth Pepper and Inferno Pepper (plus Firemouth flame jets)
+ * to melt vertical/overhead `ICE_SOLID` barriers without ever dissolving icy floors underfoot!
+ */
+function stepIceBarrierMelt(state: SimState, input: InputFrame): void {
+  const p = state.player;
+  const tr = p.transformation;
+  const footTy = Math.floor((p.y - 1) / T);
+
+  if (tr === 'firemouth' || tr === 'inferno_pepper' || tr === 'fire_butt') {
+    const frontTx = Math.floor((p.x + p.facing * 20) / T);
+    const minTy = Math.floor((p.y - 44) / T);
+    for (let ty = minTy; ty <= footTy; ty++) {
+      // Only melt wall tiles strictly above ground floor row so ice floors remain solid underfoot
+      if (ty < Math.floor((p.y + 2) / T)) {
+        meltIceTileAt(state, frontTx, ty);
+      }
+    }
+
+    // Firemouth active breath cone melts ice barriers up to 4 tiles ahead!
+    if (tr === 'firemouth' && (input.grabPressed || input.shootPressed)) {
+      for (let dist = 1; dist <= 4; dist++) {
+        const tx = Math.floor(p.x / T) + p.facing * dist;
+        let hitNonIceSolid = false;
+        for (let ty = minTy; ty <= footTy; ty++) {
+          const tile = getTileAt(state.room, tx, ty, state.escape.active);
+          if (tile === TileType.ICE_SOLID) {
+            meltIceTileAt(state, tx, ty);
+          } else if (isSolidTile(tile)) {
+            hitNonIceSolid = true;
+          }
+        }
+        if (hitNonIceSolid) break;
+      }
+    }
+
+    // Inferno Pepper & Fire Butt rocket upward through overhead ice ceilings!
+    if ((tr === 'inferno_pepper' || tr === 'fire_butt') && p.vy < -1.5) {
+      const headTy = Math.floor((p.y - 50) / T);
+      const minTx = Math.floor((p.x - 14) / T);
+      const maxTx = Math.floor((p.x + 14) / T);
+      for (let tx = minTx; tx <= maxTx; tx++) {
+        meltIceTileAt(state, tx, headTy);
+      }
+    }
+  }
+
+  // Player flame projectiles melt ICE_SOLID barriers right ahead of impact
+  for (let i = 0; i < state.projectiles.length; i++) {
+    const pr = state.projectiles[i];
+    if (pr.owner !== 'player' || pr.kind !== 'flame') continue;
+    const lookTx = Math.floor((pr.x + pr.vx) / T);
+    const lookTy = Math.floor(pr.y / T);
+    meltIceTileAt(state, lookTx, lookTy);
+    meltIceTileAt(state, lookTx, lookTy - 1);
+  }
+}
+
+function triggerTimeTerminal(
+  state: SimState,
+  prop: PropState,
+  roomId: string,
+  spawnKeyIdx: number,
+): void {
+  if (!prop.active) return;
+  prop.active = false;
+  prop.triggered = true;
+  state.collectedIds.push(`term:${roomId}:${spawnKeyIdx}`);
+  state.escape.terminalsHit += 1;
+  state.escape.timerTicks += 30 * ENGINE_CONSTANTS.SIM_HZ;
+  state.escape.maxTicks = Math.max(state.escape.maxTicks, state.escape.timerTicks);
+  state.escape.megaCrustActive = false;
+  addScore(state, 500, prop.x, prop.y - 44);
+  refillCombo(state);
+  state.hitstopTicks = Math.max(state.hitstopTicks, 3);
+  state.shakeMag = Math.max(state.shakeMag, 5);
+  state.shakeTimer = Math.max(state.shakeTimer, 10);
+  state.events.push(
+    { type: 'sfx', sfx: 'time_extend' },
+    { type: 'rumble', strong: 0.55, weak: 0.45, durationMs: 120 },
+    {
+      type: 'particle',
+      kind: 'starburst',
+      x: prop.x,
+      y: prop.y - 26,
+      count: 14,
+      color: '#52ff9b',
+    },
+    {
+      type: 'particle',
+      kind: 'confetti',
+      x: prop.x,
+      y: prop.y - 26,
+      count: 10,
+      color: '#ffd166',
+    },
+    {
+      type: 'callout',
+      text: 'TIME TERMINAL HIT! +30 SECONDS!',
+      durationTicks: 85,
+    },
+  );
+}
+
+function sinkGolfHole(
+  state: SimState,
+  goal: PropState,
+  ball: PropState | null,
+  strokesUsed: number,
+  parTarget: number,
+): void {
+  if (!goal.active) return;
+  goal.active = false;
+  goal.triggered = true;
+  if (ball) {
+    ball.active = false;
+    ball.triggered = true;
+  }
+  const holeIndex = goal.index ?? ball?.index ?? 0;
+  state.collectedIds.push(`golf:${state.room.id}:${holeIndex}`);
+
+  let bonus = 750;
+  let label = 'SUNKEN PUTT!';
+  if (strokesUsed <= 1) {
+    bonus = 2500;
+    label = 'HOLE IN ONE!';
+  } else if (strokesUsed < parTarget) {
+    bonus = 2000;
+    label = 'BIRDIE!';
+  } else if (strokesUsed === parTarget) {
+    bonus = 1500;
+    label = 'ON PAR!';
+  }
+
+  addScore(state, bonus, goal.x, goal.y - 48);
+  refillCombo(state);
+  state.hitstopTicks = Math.max(state.hitstopTicks, 4);
+  state.shakeMag = Math.max(state.shakeMag, 5);
+  state.shakeTimer = Math.max(state.shakeTimer, 12);
+  state.flashTicks = Math.max(state.flashTicks, 4);
+  state.events.push(
+    { type: 'sfx', sfx: 'treasure_get' },
+    { type: 'rumble', strong: 0.65, weak: 0.5, durationMs: 150 },
+    {
+      type: 'particle',
+      kind: 'confetti',
+      x: goal.x,
+      y: goal.y - 24,
+      count: 20,
+      color: '#74c69d',
+    },
+    {
+      type: 'particle',
+      kind: 'starburst',
+      x: goal.x,
+      y: goal.y - 24,
+      count: 12,
+      color: '#ffd166',
+    },
+    {
+      type: 'callout',
+      text: `${label} +${bonus}!`,
+      durationTicks: 100,
+    },
+  );
+}
+
 export function stepLevelRuntime(state: SimState, input: InputFrame): void {
   if (state.stageComplete || state.gameOver) return;
 
@@ -699,6 +991,9 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
   if (state.bossIntroTicks > 0) {
     state.bossIntroTicks -= 1;
   }
+
+  // Melt ICE_SOLID barriers for Firemouth / Inferno Pepper / Flames
+  stepIceBarrierMelt(state, input);
 
   const p = state.player;
   const pBox = getPlayerBox(p);
@@ -726,6 +1021,7 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
 
       if (pk.kind === 'clock_pickup' && state.escape.active) {
         state.escape.timerTicks += 5 * ENGINE_CONSTANTS.SIM_HZ;
+        state.escape.maxTicks = Math.max(state.escape.maxTicks, state.escape.timerTicks);
         state.events.push({ type: 'sfx', sfx: 'time_extend' });
       } else {
         state.events.push({
@@ -749,9 +1045,85 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
 
   // ---- 2. Interactive Props ----
   const levelDef = state.stageId ? getLevelDef(state.stageId) : null;
-  let golfGoal: PropState | null = null;
+  const golfGoals: PropState[] = [];
   for (const pr of state.props) {
-    if (pr.kind === 'golf_goal') golfGoal = pr;
+    if (pr.kind === 'golf_goal' && pr.active) {
+      golfGoals.push(pr);
+    }
+  }
+
+  // Allow player projectiles (Shotgun, Golf Shot, Flame, etc.) to trigger Time Terminals,
+  // Dash Buttons, Alarm Sensors (Shotgun payback!), and Golf Goals!
+  for (let pi = state.projectiles.length - 1; pi >= 0; pi--) {
+    const pr = state.projectiles[pi];
+    if (pr.owner !== 'player') continue;
+    const prL = pr.x - pr.radius;
+    const prR = pr.x + pr.radius;
+    const prT = pr.y - pr.radius;
+    const prB = pr.y + pr.radius;
+
+    for (let k = 0; k < state.props.length; k++) {
+      const prop = state.props[k];
+      if (!prop.active) continue;
+      if (
+        !overlapsBox(
+          prL,
+          prT,
+          prR,
+          prB,
+          prop.x - prop.width * 0.5,
+          prop.y - prop.height,
+          prop.x + prop.width * 0.5,
+          prop.y,
+        )
+      ) {
+        continue;
+      }
+
+      if (prop.kind === 'time_terminal') {
+        triggerTimeTerminal(state, prop, state.room.id, prop.index ?? k);
+        state.projectiles.splice(pi, 1);
+        break;
+      } else if (prop.kind === 'dash_button' && !prop.timerTicks) {
+        prop.timerTicks = 15;
+        prop.triggered = true;
+        const wasClosed = state.room.outletGateTimer <= 0;
+        state.room.outletGateTimer = 720;
+        state.events.push(
+          { type: 'sfx', sfx: 'ui_confirm' },
+          { type: 'particle', kind: 'spark', x: prop.x, y: prop.y - 18, count: 8, color: '#ffe066' },
+        );
+        if (wasClosed) {
+          state.events.push({
+            type: 'callout',
+            text: 'OUTLET GATE OPEN! FLOOR IT!',
+            durationTicks: 70,
+          });
+        }
+        state.projectiles.splice(pi, 1);
+        break;
+      } else if (
+        prop.kind === 'alarm_sensor' &&
+        (pr.kind === 'shotgun_pellet' || pr.kind === 'charged_shot')
+      ) {
+        prop.active = false;
+        prop.triggered = true;
+        state.collectedIds.push(`alarm_broken:${state.room.id}:${prop.index ?? k}`);
+        addScore(state, 150, prop.x, prop.y - 32);
+        refillCombo(state, 20);
+        state.events.push(
+          { type: 'sfx', sfx: 'block_metal' },
+          { type: 'particle', kind: 'metal_chunk', x: prop.x, y: prop.y - 26, count: 8, color: '#ff4d6d' },
+          { type: 'callout', text: 'ALARM BLASTED! +150!', durationTicks: 55 },
+        );
+        state.projectiles.splice(pi, 1);
+        break;
+      } else if (prop.kind === 'golf_goal' && pr.kind === 'golf_shot') {
+        sinkGolfHole(state, prop, null, 1, 3);
+        state.projectiles.splice(pi, 1);
+        break;
+      }
+    }
   }
 
   for (let i = 0; i < state.props.length; i++) {
@@ -764,6 +1136,15 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
     if (prop.kind === 'golf_ball' && prop.active) {
       const bvx = prop.vx ?? 0;
       const bvy = Math.min(ENGINE_CONSTANTS.FREEFALL_VSP, (prop.vy ?? 0) + ENGINE_CONSTANTS.GRAV);
+
+      // Fast-rolling golf ball smashes Marble blocks in front of it!
+      if (Math.abs(bvx) >= 6.5) {
+        const edgeX = prop.x + Math.sign(bvx) * (prop.width * 0.5 + 4);
+        const edgeTx = Math.floor(edgeX / T);
+        const midTy = Math.floor((prop.y - prop.height * 0.5) / T);
+        breakTileAt(state, edgeTx, midTy, 'marble');
+      }
+
       const res = moveAndCollideBox(
         state.room,
         state.escape.active,
@@ -776,36 +1157,72 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
       );
       prop.x = res.x;
       prop.y = res.y;
-      prop.vx = res.hitX ? -bvx * 0.7 : bvx * (res.grounded ? 0.94 : 0.99);
-      prop.vy = res.hitY ? (Math.abs(bvy) > 3 ? -bvy * 0.45 : 0) : bvy;
+      prop.vx = res.hitX ? -bvx * 0.72 : bvx * (res.grounded ? 0.94 : 0.992);
+      if (Math.abs(prop.vx) < 0.08) prop.vx = 0;
+      prop.vy = res.hitY ? (Math.abs(bvy) > 3 ? -bvy * 0.48 : 0) : bvy;
 
-      // Check Golf Goal sink!
-      if (
-        golfGoal &&
-        golfGoal.active &&
-        Math.abs(prop.x - golfGoal.x) < 36 &&
-        Math.abs(prop.y - golfGoal.y) < 42
-      ) {
-        prop.active = false;
-        prop.triggered = true;
-        golfGoal.triggered = true;
-        const underParBonus = (prop.strokes ?? 1) <= (prop.parCount ?? 3) ? 1500 : 750;
-        addScore(state, underParBonus, golfGoal.x, golfGoal.y - 48);
-        refillCombo(state);
-        state.events.push({ type: 'sfx', sfx: 'treasure_get' });
-        state.events.push({
-          type: 'particle',
-          kind: 'confetti',
-          x: golfGoal.x,
-          y: golfGoal.y - 24,
-          count: 16,
-          color: '#74c69d',
-        });
-        state.events.push({
-          type: 'callout',
-          text: `HOLE IN KRUNK! +${underParBonus}!`,
-          durationTicks: 100,
-        });
+      // Fast-moving golf ball bowls over enemies for juicy combo kills!
+      if (Math.abs(prop.vx) >= 6 || Math.abs(prop.vy) >= 6) {
+        for (let ei = 0; ei < state.enemies.length; ei++) {
+          const e = state.enemies[ei];
+          if (!e.alive || e.grabbed) continue;
+          if (
+            overlapsBox(
+              prop.x - prop.width * 0.5,
+              prop.y - prop.height,
+              prop.x + prop.width * 0.5,
+              prop.y,
+              e.x - e.width * 0.5,
+              e.y - e.height,
+              e.x + e.width * 0.5,
+              e.y,
+            )
+          ) {
+            damageEnemy(state, e, (prop.vx >= 0 ? 1 : -1) * 12, -8, true);
+          }
+        }
+      }
+
+      // Pit safety: bounce golf ball safely back up if it somehow enters room bottom
+      const roomH = state.room.heightTiles * T;
+      if (prop.y > roomH - 16) {
+        prop.y = roomH - 64;
+        prop.vy = -8;
+      }
+
+      // Check Golf Goal sink (match by index first, then nearest active goal)!
+      let matchedGoal: PropState | null = null;
+      for (let gi = 0; gi < golfGoals.length; gi++) {
+        const g = golfGoals[gi];
+        if (!g.active) continue;
+        if (
+          Math.abs(prop.x - g.x) < 40 &&
+          Math.abs(prop.y - g.y) < 46 &&
+          (prop.index === undefined || g.index === undefined || prop.index === g.index)
+        ) {
+          matchedGoal = g;
+          break;
+        }
+      }
+      if (!matchedGoal) {
+        for (let gi = 0; gi < golfGoals.length; gi++) {
+          const g = golfGoals[gi];
+          if (!g.active) continue;
+          if (Math.abs(prop.x - g.x) < 40 && Math.abs(prop.y - g.y) < 46) {
+            matchedGoal = g;
+            break;
+          }
+        }
+      }
+      if (matchedGoal) {
+        sinkGolfHole(
+          state,
+          matchedGoal,
+          prop,
+          Math.max(1, prop.strokes ?? 1),
+          prop.parCount ?? 3,
+        );
+        continue;
       }
     }
 
@@ -975,10 +1392,33 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
 
       case 'transform_totem': {
         if (prop.transformation && !prop.timerTicks) {
-          prop.timerTicks = 60;
-          if (p.transformation !== prop.transformation) {
+          prop.timerTicks = 25;
+          if (prop.transformation === 'none') {
+            if (p.transformation !== 'none') {
+              clearTransformation(state);
+              state.events.push(
+                { type: 'sfx', sfx: 'transform' },
+                { type: 'callout', text: 'BACK TO NORMAL!', durationTicks: 55 },
+              );
+            }
+          } else if (p.transformation !== prop.transformation) {
             applyTransformation(state, prop.transformation);
-            state.events.push({ type: 'sfx', sfx: 'transform' });
+            state.events.push({ type: 'rumble', strong: 0.4, weak: 0.3, durationMs: 75 });
+          } else if (prop.transformation === 'bomb') {
+            p.transformTimer = 180;
+            state.events.push({
+              type: 'particle',
+              kind: 'spark',
+              x: p.x,
+              y: p.y - 36,
+              count: 6,
+              color: '#ffbb33',
+            });
+          } else if (prop.transformation === 'fire_butt') {
+            p.vy = -14;
+            p.transformTimer = 55;
+            p.grounded = false;
+            state.events.push({ type: 'sfx', sfx: 'jump' });
           }
         }
         break;
@@ -986,54 +1426,70 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
 
       case 'buddy_switch': {
         if (prop.riderTarget && !prop.timerTicks) {
-          prop.timerTicks = 50;
+          prop.timerTicks = 25;
           const desired =
             prop.riderTarget === 'gusto_chonks' ? 'gusto_chonks' : state.character;
           if (p.rider !== desired) {
+            if (desired === 'gusto_chonks' && p.transformation !== 'none') {
+              clearTransformation(state);
+            }
             p.rider = desired;
-            state.events.push({ type: 'sfx', sfx: 'transform' });
-            state.events.push({
-              type: 'callout',
-              text:
-                desired === 'gusto_chonks'
-                  ? 'TAG TEAM: GUSTO & CHONKS!'
-                  : 'SOLO SPRINT ENGAGED!',
-              durationTicks: 80,
-            });
+            state.events.push(
+              { type: 'sfx', sfx: 'transform' },
+              { type: 'rumble', strong: 0.45, weak: 0.35, durationMs: 80 },
+              {
+                type: 'particle',
+                kind: 'starburst',
+                x: prop.x,
+                y: prop.y - 24,
+                count: 10,
+                color: '#72efdd',
+              },
+              {
+                type: 'callout',
+                text:
+                  desired === 'gusto_chonks'
+                    ? 'TAG TEAM: GUSTO & CHONKS!'
+                    : 'SOLO SPRINT ENGAGED!',
+                durationTicks: 80,
+              },
+            );
           }
         }
         break;
       }
 
       case 'time_terminal': {
-        prop.active = false;
-        prop.triggered = true;
-        state.collectedIds.push(`term:${state.room.id}:${i}`);
-        state.escape.terminalsHit += 1;
-        state.escape.timerTicks += 30 * ENGINE_CONSTANTS.SIM_HZ;
-        state.escape.megaCrustActive = false;
-        addScore(state, 500, prop.x, prop.y - 44);
-        refillCombo(state);
-        state.events.push({ type: 'sfx', sfx: 'time_extend' });
-        state.events.push({
-          type: 'callout',
-          text: 'TIME TERMINAL HIT! +30 SECONDS!',
-          durationTicks: 85,
-        });
+        triggerTimeTerminal(state, prop, state.room.id, prop.index ?? i);
         break;
       }
 
       case 'dash_button': {
         if (!prop.timerTicks) {
-          prop.timerTicks = 30;
+          prop.timerTicks = 15;
           prop.triggered = true;
-          state.room.outletGateTimer = 360;
-          state.events.push({ type: 'sfx', sfx: 'ui_confirm' });
-          state.events.push({
-            type: 'callout',
-            text: 'OUTLET GATE OPEN! GO GO GO!',
-            durationTicks: 70,
-          });
+          const wasClosed = state.room.outletGateTimer <= 0;
+          // Both step.ts and modes.ts tick outletGateTimer down by 1 -> 720 gives 6 full seconds!
+          state.room.outletGateTimer = 720;
+          state.events.push(
+            { type: 'sfx', sfx: 'ui_confirm' },
+            { type: 'rumble', strong: 0.35, weak: 0.25, durationMs: 65 },
+            {
+              type: 'particle',
+              kind: 'spark',
+              x: prop.x,
+              y: prop.y - 18,
+              count: 8,
+              color: '#ffe066',
+            },
+          );
+          if (wasClosed) {
+            state.events.push({
+              type: 'callout',
+              text: 'OUTLET GATE OPEN! FLOOR IT!',
+              durationTicks: 70,
+            });
+          }
         }
         break;
       }
@@ -1041,34 +1497,131 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
       case 'taxi_warp': {
         if (input.moveY < 0 && !prop.timerTicks && prop.targetRoomIndex !== undefined) {
           prop.timerTicks = 30;
-          state.events.push({ type: 'sfx', sfx: 'door_enter' });
-          loadStageRoom(state, prop.targetRoomIndex, prop.targetX, prop.targetY);
-          return;
+          state.flashTicks = Math.max(state.flashTicks, 4);
+          state.events.push(
+            { type: 'sfx', sfx: 'door_enter' },
+            {
+              type: 'particle',
+              kind: 'smoke',
+              x: prop.x,
+              y: prop.y - 22,
+              count: 8,
+              color: '#ffe066',
+            },
+          );
+          if (prop.targetRoomIndex === state.roomIndex) {
+            const tx = prop.targetX ?? p.x;
+            const ty = prop.targetY ?? p.y;
+            p.x = tx;
+            p.y = ty;
+            p.prevX = tx;
+            p.prevY = ty;
+            p.vx = 0;
+            p.vy = 0;
+            p.movespeed = Math.min(p.movespeed, 6);
+            snapCameraToPlayer(state);
+            state.events.push(
+              {
+                type: 'particle',
+                kind: 'starburst',
+                x: tx,
+                y: ty - 24,
+                count: 10,
+                color: '#ffd166',
+              },
+              {
+                type: 'callout',
+                text: 'EXPRESS TAXI DROP-OFF!',
+                durationTicks: 65,
+              },
+            );
+          } else {
+            state.events.push({
+              type: 'callout',
+              text: 'NEXT STOP — EXPRESS METRO!',
+              durationTicks: 70,
+            });
+            loadStageRoom(state, prop.targetRoomIndex, prop.targetX, prop.targetY);
+            return;
+          }
+        } else if (!prop.timerTicks && input.moveY >= 0) {
+          prop.timerTicks = 90;
+          state.tv.calloutText = 'PRESS UP FOR EXPRESS TAXI!';
+          state.tv.calloutTimer = 55;
         }
         break;
       }
 
       case 'alarm_sensor': {
-        if (state.room.alarmActiveTicks <= 0) {
-          state.room.alarmActiveTicks = 300;
-          state.events.push({ type: 'sfx', sfx: 'alarm_siren' });
-          state.events.push({
-            type: 'callout',
-            text: 'ALARM TRIPPED! WATCH OUT FOR BOTS!',
-            durationTicks: 85,
-          });
+        if (!prop.timerTicks) {
+          const freshTrigger = state.room.alarmActiveTicks <= 120;
+          prop.timerTicks = 45;
+          prop.triggered = true;
+          // 600 ticks -> 5 full seconds of frenzied bot pursuit!
+          state.room.alarmActiveTicks = 600;
+          if (freshTrigger) {
+            state.shakeMag = Math.max(state.shakeMag, 4.5);
+            state.shakeTimer = Math.max(state.shakeTimer, 10);
+            state.events.push(
+              { type: 'sfx', sfx: 'alarm_siren' },
+              { type: 'rumble', strong: 0.65, weak: 0.5, durationMs: 140 },
+              {
+                type: 'particle',
+                kind: 'spark',
+                x: prop.x,
+                y: prop.y - 28,
+                count: 10,
+                color: '#ff2e63',
+              },
+              {
+                type: 'callout',
+                text: 'ALARM TRIPPED! WATCH OUT FOR BOTS!',
+                durationTicks: 85,
+              },
+            );
+          }
         }
         break;
       }
 
       case 'golf_ball': {
         if (!prop.timerTicks) {
-          prop.timerTicks = 16;
+          prop.timerTicks = 12;
           prop.strokes = (prop.strokes ?? 0) + 1;
-          const kickPower = Math.max(9.5, Math.abs(p.vx) + 6);
+          const par = prop.parCount ?? 3;
+          const isLob = input.moveY < 0;
+          const isPower =
+            input.grabPressed ||
+            p.state === 'mach2' ||
+            p.state === 'mach3' ||
+            p.state === 'mach4' ||
+            p.state === 'grab_dash';
+          const kickPower = isLob
+            ? Math.max(8.5, Math.abs(p.vx) + 4.5)
+            : isPower
+              ? Math.max(13.5, Math.abs(p.vx) + 6.5)
+              : Math.max(10.5, Math.abs(p.vx) + 5.5);
           prop.vx = p.facing * kickPower;
-          prop.vy = -5.5;
-          state.events.push({ type: 'sfx', sfx: 'throw' });
+          prop.vy = isLob ? -9.2 : isPower ? -4.5 : -5.5;
+          state.events.push(
+            { type: 'sfx', sfx: 'throw' },
+            { type: 'rumble', strong: 0.4, weak: 0.3, durationMs: 60 },
+            {
+              type: 'particle',
+              kind: 'starburst',
+              x: prop.x,
+              y: prop.y - 16,
+              count: 6,
+              color: '#ffffff',
+            },
+            {
+              type: 'callout',
+              text: isLob
+                ? `LOB SHOT! STROKE ${prop.strokes} / PAR ${par}`
+                : `FORE! STROKE ${prop.strokes} / PAR ${par}`,
+              durationTicks: 55,
+            },
+          );
         }
         break;
       }
