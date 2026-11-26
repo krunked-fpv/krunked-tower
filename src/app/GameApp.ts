@@ -75,6 +75,16 @@ export class GameApp {
   private playTicksSinceSave = 0;
   private cachedStateHash = '00000000';
   private lastHashedTick = -1;
+  private pendingSimEdges = {
+    jumpPressed: false,
+    jumpReleased: false,
+    grabPressed: false,
+    machPressed: false,
+    tauntPressed: false,
+    superTauntPressed: false,
+    shootPressed: false,
+    shootReleased: false,
+  };
 
   // Performance metrics
   private emaFps = 60;
@@ -322,8 +332,31 @@ export class GameApp {
     }
   }
 
+  private clearPendingSimEdges(): void {
+    this.pendingSimEdges.jumpPressed = false;
+    this.pendingSimEdges.jumpReleased = false;
+    this.pendingSimEdges.grabPressed = false;
+    this.pendingSimEdges.machPressed = false;
+    this.pendingSimEdges.tauntPressed = false;
+    this.pendingSimEdges.superTauntPressed = false;
+    this.pendingSimEdges.shootPressed = false;
+    this.pendingSimEdges.shootReleased = false;
+  }
+
+  private blurFocusedUiElement(): void {
+    if (typeof document === 'undefined') return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active && typeof active.blur === 'function' && active !== document.body) {
+      active.blur();
+    }
+  }
+
   private runCommand(cmd: SimCommand): void {
     dispatchCommand(this.state, cmd);
+    if (!this.ui.isModalBlockingGameplay(this.state)) {
+      this.clearPendingSimEdges();
+      this.blurFocusedUiElement();
+    }
     if (this.state.events.length > 0) {
       const drained = this.state.events.splice(0, this.state.events.length);
       this.processSimEvents(drained);
@@ -530,15 +563,42 @@ export class GameApp {
     }
 
     // Fixed 60 Hz deterministic simulation catch-up loop (max 5 catch-up steps)
+    // Latch edge-triggered presses across >60 Hz rAF frames so quick taps are NEVER dropped!
     const canSimulate = !this.ui.isModalBlockingGameplay(this.state);
     if (canSimulate) {
+      this.pendingSimEdges.jumpPressed = this.pendingSimEdges.jumpPressed || polledInput.jumpPressed;
+      this.pendingSimEdges.jumpReleased = this.pendingSimEdges.jumpReleased || polledInput.jumpReleased;
+      this.pendingSimEdges.grabPressed = this.pendingSimEdges.grabPressed || polledInput.grabPressed;
+      this.pendingSimEdges.machPressed = this.pendingSimEdges.machPressed || polledInput.machPressed;
+      this.pendingSimEdges.tauntPressed = this.pendingSimEdges.tauntPressed || polledInput.tauntPressed;
+      this.pendingSimEdges.superTauntPressed =
+        this.pendingSimEdges.superTauntPressed || polledInput.superTauntPressed;
+      this.pendingSimEdges.shootPressed = this.pendingSimEdges.shootPressed || polledInput.shootPressed;
+      this.pendingSimEdges.shootReleased = this.pendingSimEdges.shootReleased || polledInput.shootReleased;
+
       this.accumulator += clampedDt;
       const fixedDt = ENGINE_CONSTANTS.FIXED_DT;
       let steps = 0;
       const simStart = performance.now();
 
       while (this.accumulator >= fixedDt && steps < MAX_CATCHUP_STEPS) {
-        const tickInput = steps === 0 ? polledInput : stripEdgeFlags(polledInput);
+        let tickInput: InputFrame;
+        if (steps === 0) {
+          tickInput = {
+            ...polledInput,
+            jumpPressed: this.pendingSimEdges.jumpPressed,
+            jumpReleased: this.pendingSimEdges.jumpReleased,
+            grabPressed: this.pendingSimEdges.grabPressed,
+            machPressed: this.pendingSimEdges.machPressed,
+            tauntPressed: this.pendingSimEdges.tauntPressed,
+            superTauntPressed: this.pendingSimEdges.superTauntPressed,
+            shootPressed: this.pendingSimEdges.shootPressed,
+            shootReleased: this.pendingSimEdges.shootReleased,
+          };
+          this.clearPendingSimEdges();
+        } else {
+          tickInput = stripEdgeFlags(polledInput);
+        }
         const events = stepSim(this.state, tickInput);
         this.processSimEvents(events);
         this.accumulator -= fixedDt;
@@ -548,6 +608,7 @@ export class GameApp {
         // Stop stepping immediately if sim transitioned into a modal screen
         if (this.ui.isModalBlockingGameplay(this.state)) {
           this.accumulator = 0;
+          this.clearPendingSimEdges();
           break;
         }
       }
@@ -566,6 +627,7 @@ export class GameApp {
       }
     } else {
       this.accumulator = 0;
+      this.clearPendingSimEdges();
     }
 
     // Frame-paced render loop (30 / 60 / 120 FPS)

@@ -887,6 +887,7 @@ export class WebGL2Renderer implements RendererAPI {
   private bossMuzzleFlashTimer = 0;
   private lastAmmoCooldown = 0;
   private lastBossAiState = '';
+  private readonly bannerLinesCache = new Map<string, readonly string[]>();
 
   // Pre-allocated PerfStats return object
   private readonly perfStats: PerfStats = {
@@ -1632,6 +1633,27 @@ export class WebGL2Renderer implements RendererAPI {
     }
   }
 
+  private getBannerLines(label: string): readonly string[] {
+    const cached = this.bannerLinesCache.get(label);
+    if (cached) return cached;
+    if (label.length <= 30) {
+      const single: readonly string[] = [label];
+      this.bannerLinesCache.set(label, single);
+      return single;
+    }
+    const mid = Math.ceil(label.length * 0.5);
+    let splitIdx = label.lastIndexOf(' ', mid + 4);
+    if (splitIdx < 8) splitIdx = label.indexOf(' ', mid - 4);
+    if (splitIdx < 0) {
+      const pair: readonly string[] = [label.slice(0, mid), label.slice(mid)];
+      this.bannerLinesCache.set(label, pair);
+      return pair;
+    }
+    const lines: readonly string[] = [label.slice(0, splitIdx).trim(), label.slice(splitIdx + 1).trim()];
+    this.bannerLinesCache.set(label, lines);
+    return lines;
+  }
+
   private pushBitmapText(
     text: string,
     cx: number,
@@ -1643,8 +1665,9 @@ export class WebGL2Renderer implements RendererAPI {
     a = 1
   ): void {
     const snappedScale = scale >= 0.9 ? Math.round(scale) : 1;
-    const step = 9 * snappedScale;
-    let x = Math.round(cx - (text.length * step) * 0.5);
+    const step = 11 * snappedScale;
+    const totalW = text.length > 0 ? (text.length - 1) * step + 12 * snappedScale : 0;
+    let x = Math.round(cx - totalW * 0.5);
     const py = Math.round(y);
     for (let i = 0; i < text.length; i++) {
       const gk = fontGlyphKey(text[i]);
@@ -1922,7 +1945,7 @@ export class WebGL2Renderer implements RendererAPI {
       const locked = Boolean(d.escapeLocked && state.escape.active);
       this.pushSprite('prop_exit_door', sx, sy, false, 0.9, 0.9, locked ? 0.55 : 1, locked ? 0.45 : 1, locked ? 0.5 : 1, 1);
       if (d.label) {
-        this.pushBitmapText(d.label.slice(0, 14), sx, sy - 82, 0.72, 1, 0.93, 0.55, 1);
+        this.pushBitmapText(d.label, sx, sy - 82, 0.72, 1, 0.93, 0.55, 1);
       }
     }
 
@@ -2048,12 +2071,20 @@ export class WebGL2Renderer implements RendererAPI {
           prop.kind === 'hub_bonus_gate' ||
           prop.kind === 'tutorial_sign')
       ) {
-        const cleanLabel = prop.label.slice(0, 24);
-        const bannerW = Math.max(88, cleanLabel.length * 9 + 18);
-        const bannerY = prop.kind === 'tutorial_sign' ? sy - 72 : sy - 114;
-        this.pushColoredRect(sx - bannerW * 0.5, bannerY - 6, bannerW, 24, 0.1, 0.07, 0.14, 0.92);
-        this.pushRectOutline(sx - bannerW * 0.5, bannerY - 6, bannerW, 24, 2, 1, 0.84, 0.28, 1);
-        this.pushBitmapText(cleanLabel, sx, bannerY - 1, 1, 1, 0.96, 0.75, 1);
+        const lines = this.getBannerLines(prop.label);
+        let maxChars = 0;
+        for (let li = 0; li < lines.length; li++) {
+          if (lines[li].length > maxChars) maxChars = lines[li].length;
+        }
+        const bannerW = Math.max(96, maxChars * 11 + 18);
+        const lineH = 18;
+        const bannerH = lines.length * lineH + 8;
+        const baseY = prop.kind === 'tutorial_sign' ? sy - 66 - bannerH : sy - 102 - bannerH;
+        this.pushColoredRect(sx - bannerW * 0.5, baseY, bannerW, bannerH, 0.1, 0.07, 0.14, 0.92);
+        this.pushRectOutline(sx - bannerW * 0.5, baseY, bannerW, bannerH, 2, 1, 0.84, 0.28, 1);
+        for (let li = 0; li < lines.length; li++) {
+          this.pushBitmapText(lines[li], sx, baseY + 5 + li * lineH, 1, 1, 0.96, 0.75, 1);
+        }
       }
     }
   }
@@ -2723,8 +2754,9 @@ export class WebGL2Renderer implements RendererAPI {
     scale = 1
   ): void {
     const snappedScale = scale >= 0.9 ? Math.round(scale) : 1;
-    const step = 9 * snappedScale;
-    let x = Math.round(cx - text.length * step * 0.5);
+    const step = 11 * snappedScale;
+    const totalW = text.length > 0 ? (text.length - 1) * step + 12 * snappedScale : 0;
+    let x = Math.round(cx - totalW * 0.5);
     const py = Math.round(y);
     for (let i = 0; i < text.length; i++) {
       const gk = fontGlyphKey(text[i]);
@@ -2860,7 +2892,7 @@ export class WebGL2Renderer implements RendererAPI {
       if (dx < -120 || dx > VIEW_W + 120 || dy < -120 || dy > VIEW_H + 120) continue;
       this.drawSprite2D(ctx, 'prop_exit_door', dx, dy, false, 0.9, 0.9, d.escapeLocked && state.escape.active ? 0.5 : 1);
       if (d.label) {
-        this.drawBitmapText2D(ctx, d.label.slice(0, 14), dx, dy - 82, 1);
+        this.drawBitmapText2D(ctx, d.label, dx, dy - 82, 1);
       }
     }
 
@@ -2919,7 +2951,7 @@ export class WebGL2Renderer implements RendererAPI {
         this.drawSprite2D(ctx, propToSpriteKey(pr), sx, sy);
       }
 
-      // Widened non-clipping portal sign banners matching WebGL2 (cleanLabel = prop.label.slice(0, 24))
+      // Widened non-clipping portal sign banners matching WebGL2 (word-wrapped up to 2 lines)
       if (
         pr.label &&
         (pr.kind === 'hub_stage_gate' ||
@@ -2928,17 +2960,24 @@ export class WebGL2Renderer implements RendererAPI {
           pr.kind === 'hub_bonus_gate' ||
           pr.kind === 'tutorial_sign')
       ) {
-        const cleanLabel = pr.label.slice(0, 24);
-        const bannerW = Math.max(88, cleanLabel.length * 9 + 18);
-        const bannerY = pr.kind === 'tutorial_sign' ? sy - 72 : sy - 114;
+        const lines = this.getBannerLines(pr.label);
+        let maxChars = 0;
+        for (let li = 0; li < lines.length; li++) {
+          if (lines[li].length > maxChars) maxChars = lines[li].length;
+        }
+        const bannerW = Math.max(96, maxChars * 11 + 18);
+        const lineH = 18;
+        const bannerH = lines.length * lineH + 8;
         const bx0 = Math.round(sx - bannerW * 0.5);
-        const by0 = Math.round(bannerY - 6);
+        const by0 = Math.round(pr.kind === 'tutorial_sign' ? sy - 66 - bannerH : sy - 102 - bannerH);
         ctx.fillStyle = 'rgba(26, 18, 36, 0.92)';
-        ctx.fillRect(bx0, by0, bannerW, 24);
+        ctx.fillRect(bx0, by0, bannerW, bannerH);
         ctx.strokeStyle = '#ffd647';
         ctx.lineWidth = 2;
-        ctx.strokeRect(bx0, by0, bannerW, 24);
-        this.drawBitmapText2D(ctx, cleanLabel, sx, bannerY, 1);
+        ctx.strokeRect(bx0, by0, bannerW, bannerH);
+        for (let li = 0; li < lines.length; li++) {
+          this.drawBitmapText2D(ctx, lines[li], sx, by0 + 5 + li * lineH, 1);
+        }
       }
     }
 

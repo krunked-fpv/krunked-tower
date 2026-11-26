@@ -201,12 +201,42 @@ function hasWallAtSide(state: SimState, dir: 1 | -1): boolean {
   const p = state.player;
   const probeX = p.x + dir * (ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5 + 3);
   const tx = Math.floor(probeX / TS);
+  const lowTy = Math.floor((p.y - 5) / TS);
   const midTy = Math.floor((p.y - 22) / TS);
   const topTy = Math.floor((p.y - 38) / TS);
   return (
+    isSolidTile(getTileAt(state.room, tx, lowTy, state.escape.active)) ||
     isSolidTile(getTileAt(state.room, tx, midTy, state.escape.active)) ||
     isSolidTile(getTileAt(state.room, tx, topTy, state.escape.active))
   );
+}
+
+function isFlushWallAtSide(state: SimState, dir: 1 | -1): boolean {
+  const p = state.player;
+  const h = p.crouch ? ENGINE_CONSTANTS.PLAYER_CROUCH_H : ENGINE_CONSTANTS.PLAYER_STAND_H;
+  const probeX = p.x + dir * (ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5 + 1.5);
+  const tx = Math.floor(probeX / TS);
+  const lowTy = Math.floor((p.y - 11) / TS);
+  const midTy = Math.floor((p.y - h * 0.55) / TS);
+  const topTy = Math.floor((p.y - h + 3) / TS);
+  return (
+    isSolidTile(getTileAt(state.room, tx, lowTy, state.escape.active)) ||
+    isSolidTile(getTileAt(state.room, tx, midTy, state.escape.active)) ||
+    isSolidTile(getTileAt(state.room, tx, topTy, state.escape.active))
+  );
+}
+
+function enterWallClimb(state: SimState, dir: 1 | -1, minSpeed = 8): void {
+  const p = state.player;
+  p.state = 'climb_wall';
+  p.wallspeed = clamp(Math.max(minSpeed, p.movespeed), minSpeed, ENGINE_CONSTANTS.WALL_CLIMB_MAX);
+  p.wallDir = dir;
+  p.facing = dir;
+  p.onWall = true;
+  p.grounded = false;
+  p.coyoteTicks = 0;
+  p.vy = -p.wallspeed;
+  state.events.push({ type: 'sfx', sfx: 'wall_climb' });
 }
 
 function performJump(state: SimState, vsp: number = ENGINE_CONSTANTS.JUMP_SPEED): void {
@@ -251,16 +281,22 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
         p.crouch = false;
       }
 
-      // Immediate Mach 1 entry when holding Mach!
+      // Immediate Mach 1 entry when holding Mach (skip strobing when flush against a wall!)
       if (input.machHeld && (p.grounded || p.coyoteTicks > 0)) {
-        if (input.moveX !== 0) p.facing = input.moveX;
-        p.state = 'mach1';
-        p.movespeed = Math.max(p.movespeed, ENGINE_CONSTANTS.MACH1_START);
-        p.vx = p.facing * p.movespeed + conveyorDx;
-        p.stopBufferTicks = ENGINE_CONSTANTS.STOP_BUFFER_TICKS;
-        state.events.push({ type: 'sfx', sfx: 'mach1' });
-        emitDust(state, p.x, p.y, 3);
-        break;
+        const targetDir: 1 | -1 = input.moveX !== 0 ? input.moveX : p.facing;
+        if (!isFlushWallAtSide(state, targetDir)) {
+          p.facing = targetDir;
+          p.state = 'mach1';
+          p.movespeed = Math.max(p.movespeed, ENGINE_CONSTANTS.MACH1_START);
+          p.vx = p.facing * p.movespeed + conveyorDx;
+          p.stopBufferTicks = ENGINE_CONSTANTS.STOP_BUFFER_TICKS;
+          if (p.jumpBufferTicks > 0 && p.coyoteTicks > 0) {
+            performJump(state, ENGINE_CONSTANTS.JUMP_SPEED);
+          }
+          state.events.push({ type: 'sfx', sfx: 'mach1' });
+          emitDust(state, p.x, p.y, 3);
+          break;
+        }
       }
 
       // Crouch on ground
@@ -331,6 +367,17 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
 
       const res = moveAndCollidePlayer(state, p.vx, p.vy);
       syncCollisionFlags(p, res);
+      if (
+        res.hitX &&
+        res.hitDirX === p.facing &&
+        input.machHeld &&
+        !p.grounded &&
+        p.vy <= 2
+      ) {
+        enterWallClimb(state, p.facing, 8);
+        handleHazardContact(state, res.touchedHazard);
+        return;
+      }
       if (res.hitX) p.movespeed = 0;
       if (res.hitY) p.vy = 0;
       handleHazardContact(state, res.touchedHazard);
@@ -446,6 +493,15 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
       const res = moveAndCollidePlayer(state, p.vx, p.vy);
       syncCollisionFlags(p, res);
       if (res.hitX) {
+        if (
+          res.hitDirX === p.facing &&
+          input.machHeld &&
+          (!p.grounded ? p.vy <= 2 : p.movespeed > ENGINE_CONSTANTS.MACH1_START + 0.15)
+        ) {
+          enterWallClimb(state, p.facing, 8);
+          handleHazardContact(state, res.touchedHazard);
+          return;
+        }
         p.movespeed = 0;
         p.state = 'normal';
       }
@@ -553,12 +609,7 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
       // Wall Climb!
       if (res.hitX && res.hitDirX === p.facing) {
         if (input.machHeld || !p.grounded) {
-          p.state = 'climb_wall';
-          p.wallspeed = clamp(p.movespeed, 7, ENGINE_CONSTANTS.WALL_CLIMB_MAX);
-          p.wallDir = p.facing;
-          p.onWall = true;
-          p.vy = -p.wallspeed;
-          state.events.push({ type: 'sfx', sfx: 'wall_climb' });
+          enterWallClimb(state, p.facing, 7);
           return;
         } else {
           p.movespeed = 0;
@@ -690,12 +741,7 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
 
       if (res.hitX && res.hitDirX === p.facing) {
         if (input.machHeld || !p.grounded) {
-          p.state = 'climb_wall';
-          p.wallspeed = clamp(p.movespeed, 12, ENGINE_CONSTANTS.WALL_CLIMB_MAX);
-          p.wallDir = p.facing;
-          p.onWall = true;
-          p.vy = -p.wallspeed;
-          state.events.push({ type: 'sfx', sfx: 'wall_climb' });
+          enterWallClimb(state, p.facing, 12);
           return;
         } else {
           // Wall bonk!
@@ -827,6 +873,7 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
     // ------------------------------------------------------------------
     case 'climb_wall': {
       p.crouch = false;
+      const wallSide: 1 | -1 = p.wallDir !== 0 ? p.wallDir : p.facing;
       p.wallspeed = Math.min(
         ENGINE_CONSTANTS.WALL_CLIMB_MAX,
         p.wallspeed + ENGINE_CONSTANTS.WALL_CLIMB_ACCEL,
@@ -834,12 +881,23 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
 
       // Wall kick jump maintaining Mach speed!
       if (p.jumpBufferTicks > 0) {
-        const kickDir = (-p.wallDir || -p.facing) as 1 | -1;
+        const kickDir = (-wallSide) as 1 | -1;
         p.facing = kickDir;
         p.movespeed = clamp(p.wallspeed, 10, ENGINE_CONSTANTS.MACH4_SPEED);
         p.state = p.movespeed >= ENGINE_CONSTANTS.MACH3_SPEED ? 'mach3' : 'mach2';
         p.onWall = false;
         performJump(state, ENGINE_CONSTANTS.JUMP_SPEED);
+        break;
+      }
+
+      // Pressing away from wall cleanly detaches!
+      if (input.moveX === -wallSide) {
+        p.facing = (-wallSide) as 1 | -1;
+        p.state = 'normal';
+        p.onWall = false;
+        p.movespeed = ENGINE_CONSTANTS.WALK_CRUISE;
+        p.vx = p.facing * p.movespeed;
+        p.vy = -2;
         break;
       }
 
@@ -860,16 +918,16 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
       const res = moveAndCollidePlayer(state, 0, p.vy);
       handleHazardContact(state, res.touchedHazard);
 
-      // Hit ceiling while climbing
+      // Hit ceiling while climbing -> drop cleanly without re-grabbing wall
       if (res.hitY && res.hitDirY === -1) {
         p.state = 'normal';
         p.onWall = false;
-        p.vy = 1;
+        p.movespeed = 0;
+        p.vy = 2.5;
         return;
       }
 
       // Check if we cleared the top of the wall -> vault smoothly onto ledge!
-      const wallSide: 1 | -1 = p.wallDir !== 0 ? p.wallDir : p.facing;
       if (!hasWallAtSide(state, wallSide)) {
         p.facing = wallSide;
         p.movespeed = clamp(p.wallspeed, 10, ENGINE_CONSTANTS.MACH4_SPEED);
@@ -907,11 +965,7 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
 
       if (res.hitX && res.hitDirX === p.facing) {
         if (input.machHeld) {
-          p.state = 'climb_wall';
-          p.wallspeed = Math.max(10, p.movespeed);
-          p.wallDir = p.facing;
-          p.onWall = true;
-          state.events.push({ type: 'sfx', sfx: 'wall_climb' });
+          enterWallClimb(state, p.facing, 10);
         } else {
           p.state = 'normal';
           p.movespeed = 0;
@@ -951,8 +1005,9 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
         break;
       }
 
-      // Throw enemy (Up Throw or Forward Throw)
-      if (input.grabPressed) {
+      // Throw enemy (Up Throw or Forward Throw — buffered so quick taps always fire!)
+      if (input.grabPressed || p.slapBufferTicks > 0) {
+        p.slapBufferTicks = 0;
         grabbed.grabbed = false;
         grabbed.thrown = true;
         grabbed.stunTicks = 120;
@@ -985,6 +1040,7 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
       applyGravity(p);
       const res = moveAndCollidePlayer(state, p.vx, p.vy);
       syncCollisionFlags(p, res);
+      if (res.hitX) p.movespeed = 0;
       if (res.hitY) p.vy = 0;
 
       // Sync carried enemy position above hands
@@ -1166,11 +1222,7 @@ function stepChefPeppo(state: SimState, input: InputFrame): void {
       syncCollisionFlags(p, res);
       if (res.hitX) {
         if (input.machHeld) {
-          p.state = 'climb_wall';
-          p.wallspeed = ENGINE_CONSTANTS.SJUMP_CANCEL_SPEED;
-          p.wallDir = p.facing;
-          p.onWall = true;
-          state.events.push({ type: 'sfx', sfx: 'wall_climb' });
+          enterWallClimb(state, p.facing, ENGINE_CONSTANTS.SJUMP_CANCEL_SPEED);
         } else {
           p.state = 'normal';
           p.movespeed = 0;
@@ -1427,12 +1479,21 @@ function stepGustoChonks(state: SimState, input: InputFrame): void {
 
   // Wall climb for Gusto & Chonks
   if (p.state === 'climb_wall') {
+    const wallSide: 1 | -1 = p.wallDir !== 0 ? p.wallDir : p.facing;
     p.wallspeed = 11;
     if (p.jumpBufferTicks > 0) {
-      p.facing = (-p.wallDir || -p.facing) as 1 | -1;
+      p.facing = (-wallSide) as 1 | -1;
       p.state = 'normal';
       p.movespeed = ENGINE_CONSTANTS.GUSTO_BASE_SPEED;
       performJump(state, ENGINE_CONSTANTS.JUMP_SPEED);
+      return;
+    }
+    if (input.moveX === -wallSide) {
+      p.facing = (-wallSide) as 1 | -1;
+      p.state = 'normal';
+      p.onWall = false;
+      p.movespeed = ENGINE_CONSTANTS.GUSTO_BASE_SPEED;
+      p.vy = -2;
       return;
     }
     if (!input.machHeld) {
@@ -1442,8 +1503,14 @@ function stepGustoChonks(state: SimState, input: InputFrame): void {
     }
     const res = moveAndCollidePlayer(state, 0, -p.wallspeed);
     handleHazardContact(state, res.touchedHazard);
-    const wallSide: 1 | -1 = p.wallDir !== 0 ? p.wallDir : p.facing;
-    if ((res.hitY && res.hitDirY === -1) || !hasWallAtSide(state, wallSide)) {
+    if (res.hitY && res.hitDirY === -1) {
+      p.state = 'normal';
+      p.onWall = false;
+      p.movespeed = 0;
+      p.vy = 2.5;
+      return;
+    }
+    if (!hasWallAtSide(state, wallSide)) {
       p.state = 'normal';
       p.onWall = false;
       p.vy = -4;
@@ -1536,11 +1603,17 @@ function stepGustoChonks(state: SimState, input: InputFrame): void {
   const res = moveAndCollidePlayer(state, p.vx, p.vy);
   syncCollisionFlags(p, res);
 
-  if (res.hitX && res.hitDirX === p.facing && (input.machHeld || !p.grounded)) {
+  if (
+    res.hitX &&
+    res.hitDirX === p.facing &&
+    (input.machHeld || !p.grounded) &&
+    (p.grounded || p.vy <= 2)
+  ) {
     p.state = 'climb_wall';
     p.wallDir = p.facing;
     p.wallspeed = 11;
     p.onWall = true;
+    p.coyoteTicks = 0;
     state.events.push({ type: 'sfx', sfx: 'wall_climb' });
     return;
   }

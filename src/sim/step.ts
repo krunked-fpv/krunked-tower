@@ -555,9 +555,15 @@ export function stepSim(state: SimState, input: InputFrame): SimEvent[] {
   }
   if (state.tv.comboBounce > 0) state.tv.comboBounce--;
 
-  // Hitstop freeze frame (preserves prev positions for crisp rendering)
+  // Hitstop freeze frame (preserves prev positions for crisp rendering & buffers fresh presses)
   if (state.hitstopTicks > 0) {
     state.hitstopTicks--;
+    if (input.jumpPressed) {
+      state.player.jumpBufferTicks = ENGINE_CONSTANTS.JUMP_BUFFER_TICKS;
+    }
+    if (input.grabPressed) {
+      state.player.slapBufferTicks = ENGINE_CONSTANTS.SLAP_BUFFER_TICKS;
+    }
     state.player.prevX = state.player.x;
     state.player.prevY = state.player.y;
     state.camera.prevX = state.camera.x;

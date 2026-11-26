@@ -11,6 +11,7 @@ import {
   renderActionGlyphHtml,
 } from '../src/input/InputRouter';
 import { GamepadDriver } from '../src/input/GamepadDriver';
+import { buildKrunkedAtlas, fontGlyphKey } from '../src/assets/KrunkedAtlas';
 
 // ============================================================================
 // Minimal Deterministic Browser DOM / Event Stub for Vitest `node` Environment
@@ -565,5 +566,21 @@ describe('InputRouter & Input Taste Discipline', () => {
     expect(getActionGlyphText('move', 'gamepad')).toBe('L-STICK');
     expect(getActionGlyphText('move', 'touch')).toBe('STICK');
     expect(renderActionGlyphHtml('back', 'gamepad')).toContain('kt-glyph--gp-b');
+  });
+
+  it('provides atlas bitmap font glyphs for all punctuation used in banners (&, (), em/en-dash)', () => {
+    const atlas = buildKrunkedAtlas();
+    const samples = [
+      'A', 'B', 'O', 'P', 'U', '0', '9',
+      '!', '?', ':', '.', '+', '-', '/', ',', "'", '$',
+      '&', '(', ')', '—', '–',
+    ];
+    for (const ch of samples) {
+      const key = fontGlyphKey(ch);
+      expect(key, `glyph key for ${ch}`).toBeTruthy();
+      expect(atlas.rects[key!], `atlas rect for ${ch} (${key})`).toBeDefined();
+      expect(atlas.rects[key!].w).toBe(12);
+      expect(atlas.rects[key!].h).toBe(16);
+    }
   });
 });

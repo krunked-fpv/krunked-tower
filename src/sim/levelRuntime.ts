@@ -104,19 +104,19 @@ function getPropDimensions(kind: PropState['kind']): { w: number; h: number } {
     case 'treasure_chest':
       return { w: 44, h: 44 };
     case 'lap2_portal':
-      return { w: 52, h: 68 };
+      return { w: 60, h: 68 };
     case 'exit_door':
-      return { w: 54, h: 72 };
+      return { w: 64, h: 72 };
     case 'secret_eye':
       return { w: 40, h: 48 };
     case 'hub_stage_gate':
     case 'hub_boss_gate':
     case 'hub_bonus_gate':
-      return { w: 64, h: 80 };
+      return { w: 72, h: 80 };
     case 'hub_elevator':
-      return { w: 68, h: 84 };
+      return { w: 76, h: 84 };
     case 'hub_broker':
-      return { w: 46, h: 58 };
+      return { w: 64, h: 58 };
     case 'golf_ball':
       return { w: 32, h: 32 };
     case 'golf_goal':
@@ -213,6 +213,11 @@ function createPropFromSpawn(
   } else if (sp.propKind === 'treasure_chest' && state.stageStats.treasureCollected) {
     active = false;
     triggered = true;
+  } else if (sp.propKind === 'secret_eye' && sp.index !== undefined) {
+    if (state.stageStats.secretsFound[sp.index]) {
+      active = false;
+      triggered = true;
+    }
   } else if (sp.propKind === 'pillar_chronos' && state.escape.pillarBroken) {
     active = false;
     triggered = true;
@@ -1361,7 +1366,7 @@ export function stepLevelRuntime(state: SimState, input: InputFrame): void {
       case 'lap2_portal': {
         const lap2Ready =
           state.escape.active && state.escape.lap < 2 && Boolean(levelDef?.hasLap2);
-        if (lap2Ready && !prop.timerTicks) {
+        if (lap2Ready && input.moveY < 0 && !prop.timerTicks) {
           prop.timerTicks = 45;
           triggerLap2(state);
           return;

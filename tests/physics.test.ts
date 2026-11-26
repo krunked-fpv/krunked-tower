@@ -959,3 +959,183 @@ describe('Transformations Framework (Core 12 Transformations)', () => {
     expect(ghoul.alive).toBe(false);
   });
 });
+
+describe('Wall Collision, Zero/Short Runway Wall-Climb & Grab Throw Reliability', () => {
+  it('never strobes normal <-> mach1 when flush against a wall and moves away immediately on opposite input', () => {
+    const grid = makeGrid(30, 16, 14);
+    for (let y = 1; y < 14; y++) grid[y][16] = '#';
+    const state = createSandbox(grid, 14, 14);
+    // Position flush against wall at tx=16 (wall left = 512, stand half-w = 13 -> x = 499)
+    state.player.x = 16 * TS - ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5;
+    state.player.prevX = state.player.x;
+    state.player.facing = 1;
+
+    let mach1SfxCount = 0;
+    for (let t = 0; t < 40; t++) {
+      const evs = stepSim(state, inputWith({ moveX: 1, machHeld: true }));
+      for (const ev of evs) {
+        if (ev.type === 'sfx' && ev.sfx === 'mach1') mach1SfxCount++;
+      }
+      expect(state.player.state).toBe('normal');
+      expect(state.player.x).toBeLessThanOrEqual(16 * TS - ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5 + 0.01);
+    }
+    expect(mach1SfxCount).toBe(0);
+
+    // Pressing Left immediately reverses cleanly into Mach 1 heading left!
+    const xAtWall = state.player.x;
+    for (let t = 0; t < 10; t++) {
+      stepSim(state, inputWith({ moveX: -1, machHeld: true }));
+    }
+    expect(state.player.facing).toBe(-1);
+    expect(state.player.state).toBe('mach1');
+    expect(state.player.x).toBeLessThan(xAtWall - 50);
+  });
+
+  it('scales an unjumpable 4-tile wall from zero runway with Shift+Jump (Peppo climb, Static bounce)', () => {
+    // 4-tile (128px) solid plateau at tx=14..24, top at row 10, floor at row 14
+    const grid = makeGrid(30, 16, 14);
+    for (let tx = 14; tx <= 24; tx++) {
+      for (let ty = 10; ty < 14; ty++) grid[ty][tx] = '#';
+    }
+
+    // 1. Chef Peppo: flush at wall, Shift + Right + Jump climbs and vaults cleanly onto plateau!
+    const peppo = createSandbox(grid, 13, 14, 'peppo');
+    peppo.player.x = 14 * TS - ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5;
+    peppo.player.prevX = peppo.player.x;
+
+    let enteredClimb = false;
+    for (let t = 0; t < 40; t++) {
+      stepSim(peppo, inputWith({
+        moveX: 1,
+        machHeld: true,
+        jumpPressed: t === 0,
+        jumpHeld: t < 6,
+      }));
+      if (peppo.player.state === 'climb_wall') enteredClimb = true;
+    }
+    expect(enteredClimb).toBe(true);
+    expect(peppo.player.x).toBeGreaterThan(15 * TS);
+    expect(peppo.player.y).toBeLessThanOrEqual(10 * TS + 1);
+
+    // 2. The Static: flush at wall, Shift + Right + Jump triggers Wall Bounce cleanly!
+    const stat = createSandbox(grid, 13, 14, 'static');
+    stat.player.x = 14 * TS - ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5;
+    stat.player.prevX = stat.player.x;
+    stepSim(stat, inputWith({ moveX: 1, machHeld: true, jumpPressed: true, jumpHeld: true }));
+    expect(stat.player.state).toBe('wall_bounce');
+    expect(stat.player.facing).toBe(-1);
+  });
+
+  it('wall-climbs from a short Mach 1 run-up (5 tiles) without stalling', () => {
+    // Mirrors Tutorial Zone 3: 7-tile cliff 5 tiles ahead of player
+    const grid = makeGrid(40, 20, 18);
+    for (let tx = 14; tx <= 26; tx++) {
+      for (let ty = 11; ty < 18; ty++) grid[ty][tx] = '#';
+    }
+    const state = createSandbox(grid, 9, 18, 'peppo');
+
+    let climbed = false;
+    let landedOnPlateau = false;
+    for (let t = 0; t < 75; t++) {
+      stepSim(state, inputWith({ moveX: 1, machHeld: true, machPressed: t === 0 }));
+      if (state.player.state === 'climb_wall') climbed = true;
+      if (state.player.x > 16 * TS && state.player.grounded && state.player.y === 11 * TS) {
+        landedOnPlateau = true;
+        break;
+      }
+    }
+    expect(climbed).toBe(true);
+    expect(landedOnPlateau).toBe(true);
+    expect(state.player.x).toBeGreaterThan(16 * TS);
+    expect(state.player.y).toBe(11 * TS);
+  });
+
+  it('detaches cleanly from climb_wall when pressing away and drops cleanly on ceiling bonk', () => {
+    const grid = makeGrid(24, 16, 14);
+    for (let y = 1; y < 14; y++) grid[y][14] = '#';
+
+    // 1. Peppo pressing LEFT while climbing right wall detaches cleanly
+    const detachPeppo = createSandbox(grid, 12, 14, 'peppo');
+    detachPeppo.player.x = 14 * TS - ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5;
+    detachPeppo.player.y = 10 * TS;
+    detachPeppo.player.state = 'climb_wall';
+    detachPeppo.player.wallDir = 1;
+    detachPeppo.player.facing = 1;
+    detachPeppo.player.wallspeed = 10;
+    detachPeppo.player.onWall = true;
+
+    const startX = detachPeppo.player.x;
+    for (let t = 0; t < 8; t++) {
+      stepSim(detachPeppo, inputWith({ moveX: -1, machHeld: true }));
+    }
+    expect(detachPeppo.player.state).not.toBe('climb_wall');
+    expect(detachPeppo.player.facing).toBe(-1);
+    expect(detachPeppo.player.x).toBeLessThan(startX - 25);
+
+    // 2. Gusto & Chonks pressing LEFT while climbing right wall detaches cleanly
+    const detachGusto = createSandbox(grid, 12, 14, 'peppo');
+    detachGusto.player.rider = 'gusto_chonks';
+    detachGusto.player.x = 14 * TS - ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5;
+    detachGusto.player.y = 10 * TS;
+    detachGusto.player.state = 'climb_wall';
+    detachGusto.player.wallDir = 1;
+    detachGusto.player.facing = 1;
+    detachGusto.player.wallspeed = 11;
+    detachGusto.player.onWall = true;
+    for (let t = 0; t < 6; t++) {
+      stepSim(detachGusto, inputWith({ moveX: -1, machHeld: true }));
+    }
+    expect(detachGusto.player.state).not.toBe('climb_wall');
+    expect(detachGusto.player.facing).toBe(-1);
+
+    // 3. Ceiling bonk during climb_wall drops cleanly without re-attaching mid-fall
+    const bonkState = createSandbox(grid, 12, 14, 'peppo');
+    bonkState.player.x = 14 * TS - ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5;
+    bonkState.player.y = 3 * TS;
+    setPlayerMotion(bonkState, 'climb_wall', 0, 1);
+    bonkState.player.wallDir = 1;
+    bonkState.player.wallspeed = 10;
+    bonkState.player.onWall = true;
+
+    let hitCeiling = false;
+    for (let t = 0; t < 20; t++) {
+      stepSim(bonkState, inputWith({ moveX: 1, machHeld: true }));
+      const curState: string = bonkState.player.state;
+      if (!hitCeiling && curState === 'normal') {
+        hitCeiling = true;
+      } else if (hitCeiling) {
+        expect(curState).toBe('normal');
+      }
+    }
+    expect(hitCeiling).toBe(true);
+    expect(bonkState.player.y).toBeGreaterThan(5 * TS);
+  });
+
+  it('captures grabPressed during hitstop and reliably throws held enemies via slapBufferTicks', () => {
+    const grid = makeGrid(24, 14, 12);
+    const state = createSandbox(grid, 8, 12);
+    const foe = makeDummyEnemy(301, state.player.x + 28, 12 * TS, 'slime_glob');
+    state.enemies.push(foe);
+
+    // Grab dash scoops foe into grab_hold without auto-throwing on scoop frame
+    stepSim(state, inputWith({ moveX: 1, grabPressed: true, grabHeld: true }));
+    for (let t = 0; t < 6 && state.player.state !== 'grab_hold'; t++) {
+      stepSim(state, inputWith({ moveX: 1 }));
+    }
+    expect(state.player.state).toBe('grab_hold');
+    expect(state.player.grabbedEnemyId).toBe(foe.id);
+    expect(state.player.slapBufferTicks).toBe(0);
+
+    // Simulate hitstop active while player taps Grab -> must buffer and throw immediately after hitstop!
+    state.hitstopTicks = 2;
+    stepSim(state, inputWith({ grabPressed: true, grabHeld: true }));
+    expect(state.player.slapBufferTicks).toBeGreaterThan(0);
+
+    stepSim(state, inputWith({})); // tick 2 of hitstop
+    stepSim(state, inputWith({})); // active sim tick executes buffered throw!
+    expect(state.player.state).toBe('normal');
+    expect(state.player.grabbedEnemyId).toBeNull();
+    expect(foe.grabbed).toBe(false);
+    expect(foe.thrown).toBe(true);
+  });
+});

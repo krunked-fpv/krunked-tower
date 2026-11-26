@@ -534,3 +534,91 @@ describe('SaveManager Persistence, Clamping & Corrupted JSON Recovery', () => {
     expect(badVersion.activeSlot).toBe(0);
   });
 });
+
+describe('Secret Room Exit Recovery, Lap 2 Opt-In & End-to-End Stage Traversal', () => {
+  it('deactivates discovered secret_eye on exit so running right never re-enters an infinite Secret Room loop', () => {
+    const state = createInitialSimState(404, 'peppo');
+    dispatchCommand(state, { type: 'enter_stage', stageId: 'entrance' });
+    state.enemies = [];
+
+    const eye = state.props.find((pr) => pr.kind === 'secret_eye');
+    expect(eye).toBeDefined();
+    expect(eye?.active).toBe(true);
+
+    // Touch Secret Eye 0 -> warps into Secret Room 1 (roomIndex 4)
+    state.player.x = eye!.x;
+    state.player.y = eye!.y;
+    stepSim(state, createNeutralInput('keyboard'));
+    expect(state.room.isSecretRoom).toBe(true);
+    expect(state.stageStats.secretsFound[0]).toBe(true);
+
+    // Reach EXIT SECRET door on right side of secret room
+    const exitDoor = state.room.doors[0];
+    expect(exitDoor).toBeDefined();
+    state.player.x = exitDoor.x;
+    state.player.y = exitDoor.y;
+    stepSim(state, createNeutralInput('keyboard'));
+
+    // Returned to Room 0 and Secret Eye 0 is now deactivated!
+    expect(state.roomIndex).toBe(0);
+    expect(state.room.isSecretRoom).toBeFalsy();
+    const returnedEye = state.props.find((pr) => pr.kind === 'secret_eye' && pr.index === 0);
+    expect(returnedEye?.active).toBe(false);
+
+    // Keep sprinting right across the old Secret Eye position -> MUST stay in Room 0!
+    for (let t = 0; t < 35; t++) {
+      stepSim(state, { ...createNeutralInput('keyboard'), moveX: 1, machHeld: true });
+      expect(state.room.isSecretRoom).toBeFalsy();
+    }
+    expect(state.roomIndex).toBe(0);
+  });
+
+  it('requires pressing Up at Lap 2 Portal so escaping players can safely pass to the Exit Door', () => {
+    const state = createInitialSimState(405, 'peppo');
+    dispatchCommand(state, { type: 'enter_stage', stageId: 'entrance' });
+    state.enemies = [];
+    startEscape(state);
+
+    const lap2 = state.props.find((pr) => pr.kind === 'lap2_portal');
+    expect(lap2).toBeDefined();
+
+    // Run left straight across Lap 2 Portal WITHOUT pressing Up -> does NOT trigger Lap 2!
+    state.player.x = lap2!.x + 48;
+    state.player.y = lap2!.y;
+    state.stageStats.elapsedTicks = 100;
+    for (let t = 0; t < 40 && !state.stageComplete; t++) {
+      stepSim(state, { ...createNeutralInput('keyboard'), moveX: -1, machHeld: true });
+      expect(state.escape.lap).toBe(1);
+    }
+    expect(state.stageComplete).toBe(true);
+
+    // Fresh escape: pressing Up while overlapping Lap 2 Portal DOES trigger Lap 2!
+    const state2 = createInitialSimState(406, 'peppo');
+    dispatchCommand(state2, { type: 'enter_stage', stageId: 'entrance' });
+    state2.enemies = [];
+    startEscape(state2);
+    state2.hitstopTicks = 0;
+    const lap2b = state2.props.find((pr) => pr.kind === 'lap2_portal')!;
+    state2.player.x = lap2b.x;
+    state2.player.y = lap2b.y;
+    stepSim(state2, { ...createNeutralInput('keyboard'), moveY: -1 });
+    expect(state2.escape.lap).toBe(2);
+    expect(state2.stageStats.lap2Done).toBe(true);
+  });
+
+  it('traverses Boot Camp Kitchen (tutorial) from start to Exit Door cleanly by holding Mach + Right', () => {
+    const state = createInitialSimState(407, 'peppo');
+    dispatchCommand(state, { type: 'enter_stage', stageId: 'tutorial' });
+
+    for (let t = 0; t < 450 && !state.stageComplete; t++) {
+      stepSim(state, {
+        ...createNeutralInput('keyboard'),
+        moveX: 1,
+        machHeld: true,
+        machPressed: t === 0,
+      });
+    }
+    expect(state.stageComplete).toBe(true);
+    expect(state.screen).toBe('rank');
+  });
+});

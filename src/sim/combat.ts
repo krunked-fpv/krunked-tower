@@ -561,6 +561,7 @@ export function stepPlayerCombatHits(state: SimState): void {
       e.stunTicks = 0;
       p.state = 'grab_hold';
       p.grabDashTicks = 0;
+      p.slapBufferTicks = 0;
       p.movespeed = Math.min(p.movespeed, ENGINE_CONSTANTS.WALK_MAX);
       refillCombo(state, 15);
       state.events.push(

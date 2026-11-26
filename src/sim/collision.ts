@@ -516,7 +516,7 @@ export function moveAndCollidePlayer(
       let maxTy = Math.floor((p.y - EPS) / TS);
 
       let blockingTile: TileTypeValue = TileType.EMPTY;
-      let blockingTx = 0;
+      let blockingTx = stepX > 0 ? Infinity : -Infinity;
       let highestBlockedTop = Infinity;
 
       for (let ty = minTy; ty <= maxTy; ty++) {
@@ -524,7 +524,9 @@ export function moveAndCollidePlayer(
           const t = getTileAt(room, tx, ty, esc);
           if (isSolidTile(t)) {
             blockingTile = t;
-            blockingTx = tx;
+            if (stepX > 0 ? tx < blockingTx : tx > blockingTx) {
+              blockingTx = tx;
+            }
             const tileTop = ty * TS;
             if (tileTop < highestBlockedTop) {
               highestBlockedTop = tileTop;

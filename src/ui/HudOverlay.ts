@@ -489,12 +489,25 @@ export class HudOverlay {
     const py = state.player.y;
     const upGlyph = renderActionGlyphHtml('up', deviceMode, keyBindings);
 
-    // Check props near player
+    // Check props near player (exact AABB parity with levelRuntime.ts so shown ↑ prompts ALWAYS trigger!)
+    const halfPlayerW = ENGINE_CONSTANTS.PLAYER_STAND_W * 0.5;
+    const playerH = state.player.crouch
+      ? ENGINE_CONSTANTS.PLAYER_CROUCH_H
+      : ENGINE_CONSTANTS.PLAYER_STAND_H;
     for (const prop of state.props) {
       if (!prop.active) continue;
-      const dx = Math.abs(px - prop.x);
-      const dy = Math.abs(py - prop.y);
-      if (dx > Math.max(46, prop.width * 0.75) || dy > Math.max(64, prop.height)) continue;
+      if (prop.kind === 'tutorial_sign') {
+        const dx = Math.abs(px - prop.x);
+        const dy = Math.abs(py - prop.y);
+        if (dx > 52 || dy > 64) continue;
+      } else {
+        const overlapsProp =
+          px + halfPlayerW > prop.x - prop.width * 0.5 &&
+          px - halfPlayerW < prop.x + prop.width * 0.5 &&
+          py > prop.y - prop.height &&
+          py - playerH < prop.y;
+        if (!overlapsProp) continue;
+      }
 
       switch (prop.kind) {
         case 'hub_stage_gate':
@@ -544,6 +557,9 @@ export class HudOverlay {
           }
           return '';
         }
+        case 'taxi_warp': {
+          return `${upGlyph} ${escapeHtml((prop.label ?? 'EXPRESS TAXI').toUpperCase())}`;
+        }
         case 'tutorial_sign': {
           if (prop.label) {
             const expanded = escapeHtml(prop.label)
@@ -561,13 +577,16 @@ export class HudOverlay {
       }
     }
 
-    // Check doors requiring Up
+    // Check doors requiring Up (exact AABB parity with levelRuntime.ts)
     for (const door of state.room.doors) {
       if (!door.requireUp) continue;
       if (door.escapeLocked && state.escape.active) continue;
-      const dx = Math.abs(px - door.x);
-      const dy = Math.abs(py - door.y);
-      if (dx <= 42 && dy <= 64) {
+      const overlapsDoor =
+        px + halfPlayerW > door.x - 24 &&
+        px - halfPlayerW < door.x + 24 &&
+        py > door.y - 64 &&
+        py - playerH < door.y;
+      if (overlapsDoor) {
         return `${upGlyph} ${escapeHtml((door.label ?? 'ENTER DOOR').toUpperCase())}`;
       }
     }
